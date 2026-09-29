@@ -1,0 +1,152 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 13px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1f2937;
+  background: #f8fafc;
+}
+
+main {
+  width: 360px;
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: 16px;
+}
+
+h2 {
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+section {
+  padding: 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid #b8c4d1;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+button {
+  padding: 7px 11px;
+  border: 1px solid #aeb9c5;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  color: #fff;
+  border-color: #1d4ed8;
+  background: #2563eb;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.status {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.status-ok {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.status-warn {
+  color: #854d0e;
+  background: #fef3c7;
+}
+
+.status-error {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.status-neutral {
+  color: #4b5563;
+  background: #e5e7eb;
+}
+
+.result .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.result strong {
+  color: #334155;
+  font-weight: 600;
+  text-align: right;
+}
+
+#summary {
+  margin-bottom: 0;
+}
+
+pre {
+  margin: 10px 0 0;
+  padding: 8px;
+  overflow: auto;
+  max-height: 190px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.error {
+  margin: 0;
+  color: #b91c1c;
+}
