@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Chat Contract Watch</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>AI Chat Contract Watch</h1>
+      <span id="status" class="status status-neutral">NOT CONFIGURED</span>
+    </header>
+
+    <section>
+      <h2>ChatGPT</h2>
+      <label for="conversation-url">Canary conversation URL</label>
+      <input
+        id="conversation-url"
+        type="url"
+        placeholder="https://chatgpt.com/c/..."
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <div class="buttons">
+        <button id="save" type="button">Save</button>
+        <button id="run" type="button" class="primary">Run now</button>
+      </div>
+    </section>
+
+    <section class="result">
+      <div class="row"><span>Last checked</span><strong id="checked-at">Never</strong></div>
+      <p id="summary">Configure a small ChatGPT canary conversation to start monitoring.</p>
+      <pre id="details" hidden></pre>
+    </section>
+
+    <p id="error" class="error" hidden></p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
