@@ -21,6 +21,7 @@ describe("actionIconStateForStatuses", () => {
     "NETWORK_ERROR",
     "HTTP_ERROR",
     "CONTRACT_MISMATCH",
+    "FUTURE_PROBLEM_STATE",
   ])("uses red when any provider reports %s", (problemStatus) => {
     expect(actionIconStateForStatuses(["OK", problemStatus, "NOT_CONFIGURED"]))
       .toBe(ActionIconState.PROBLEM);
