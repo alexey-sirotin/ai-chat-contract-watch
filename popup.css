@@ -10,7 +10,7 @@ body {
 }
 
 main {
-  width: 360px;
+  width: 380px;
   padding: 16px;
 }
 
@@ -34,7 +34,7 @@ h1 {
 }
 
 h2 {
-  margin-bottom: 10px;
+  margin-bottom: 0;
   font-size: 14px;
 }
 
@@ -44,6 +44,14 @@ section {
   border-radius: 8px;
   background: #fff;
   margin-bottom: 12px;
+}
+
+.provider-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 label {
@@ -60,11 +68,16 @@ input {
   font: inherit;
 }
 
-.buttons {
+.buttons,
+.footer-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 10px;
+}
+
+.footer-actions {
+  margin: 0 0 12px;
 }
 
 button {
@@ -116,6 +129,12 @@ button:disabled {
   background: #e5e7eb;
 }
 
+.result {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+
 .result .row {
   display: flex;
   justify-content: space-between;
@@ -130,7 +149,7 @@ button:disabled {
   text-align: right;
 }
 
-#summary {
+.summary {
   margin-bottom: 0;
 }
 
