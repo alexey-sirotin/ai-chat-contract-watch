@@ -10,17 +10,9 @@ const ACTION_ICON_COLORS = Object.freeze({
   [ActionIconState.PROBLEM]: "#c62828",
 });
 
-const PROBLEM_STATUSES = new Set([
-  "SUSPECT",
-  "AUTH_REQUIRED",
-  "NETWORK_ERROR",
-  "HTTP_ERROR",
-  "CONTRACT_MISMATCH",
-]);
-
 export function actionIconStateForStatuses(statuses) {
   const values = Array.from(statuses || []);
-  if (values.some((status) => PROBLEM_STATUSES.has(status))) {
+  if (values.some((status) => status && status !== "OK" && status !== "NOT_CONFIGURED")) {
     return ActionIconState.PROBLEM;
   }
   if (values.includes("OK")) return ActionIconState.OK;
