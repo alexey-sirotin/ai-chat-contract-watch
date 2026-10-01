@@ -137,16 +137,38 @@ button:disabled {
 
 .result .row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   color: #64748b;
-  margin-bottom: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.result .row::-webkit-details-marker {
+  display: none;
+}
+
+.result .row::before {
+  content: "▸";
+  flex: none;
+  width: 10px;
+  color: #94a3b8;
+}
+
+.result[open] .row::before {
+  content: "▾";
 }
 
 .result strong {
+  margin-left: auto;
   color: #334155;
   font-weight: 600;
   text-align: right;
+}
+
+.result[open] .row {
+  margin-bottom: 10px;
 }
 
 .summary {
