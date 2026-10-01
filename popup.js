@@ -18,7 +18,12 @@ const STATUS_LABEL = {
   NOT_CONFIGURED: "NOT CONFIGURED",
 };
 
-const PROVIDER_KEYS = ["chatgpt", "claude"];
+const PROVIDER_LABEL = {
+  chatgpt: "ChatGPT",
+  claude: "Claude",
+  grok: "Grok",
+};
+const PROVIDER_KEYS = Object.keys(PROVIDER_LABEL);
 const cards = Object.fromEntries(
   PROVIDER_KEYS.map((key) => [key, providerCard(key)]),
 );
@@ -131,7 +136,7 @@ function setRunning(provider) {
   const card = cards[provider];
   card.status.textContent = "RUNNING";
   card.status.className = "provider-status status status-neutral";
-  card.summary.textContent = `Running ${provider === "chatgpt" ? "ChatGPT" : "Claude"} contract probe…`;
+  card.summary.textContent = `Running ${PROVIDER_LABEL[provider]} contract probe…`;
   card.details.hidden = true;
 }
 
