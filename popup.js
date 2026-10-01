@@ -18,27 +18,47 @@ const STATUS_LABEL = {
   NOT_CONFIGURED: "NOT CONFIGURED",
 };
 
-const urlInput = document.querySelector("#conversation-url");
-const saveButton = document.querySelector("#save");
-const runButton = document.querySelector("#run");
-const statusEl = document.querySelector("#status");
-const checkedAtEl = document.querySelector("#checked-at");
-const summaryEl = document.querySelector("#summary");
-const detailsEl = document.querySelector("#details");
+const PROVIDER_KEYS = ["chatgpt", "claude"];
+const cards = Object.fromEntries(
+  PROVIDER_KEYS.map((key) => [key, providerCard(key)]),
+);
+const overallStatusEl = document.querySelector("#overall-status");
+const runAllButton = document.querySelector("#run-all");
 const errorEl = document.querySelector("#error");
 
-saveButton.addEventListener("click", () => void saveConfig());
-runButton.addEventListener("click", () => void runNow());
+for (const key of PROVIDER_KEYS) {
+  cards[key].saveButton.addEventListener("click", () => void saveProvider(key));
+  cards[key].runButton.addEventListener("click", () => void runProvider(key));
+}
+runAllButton.addEventListener("click", () => void runAll());
 
 void load();
+
+function providerCard(key) {
+  const root = document.querySelector(`[data-provider="${key}"]`);
+  if (!root) throw new Error(`Missing popup card for ${key}`);
+  return {
+    root,
+    input: root.querySelector(".conversation-url"),
+    saveButton: root.querySelector(".save"),
+    runButton: root.querySelector(".run"),
+    status: root.querySelector(".provider-status"),
+    checkedAt: root.querySelector(".checked-at"),
+    summary: root.querySelector(".summary"),
+    details: root.querySelector(".details"),
+  };
+}
 
 async function load() {
   setBusy(true);
   try {
     const response = await chrome.runtime.sendMessage({ type: "get-state" });
     assertOk(response);
-    urlInput.value = response.config?.chatgpt?.conversationUrl ?? "";
-    render(response.state?.providers?.chatgpt);
+    for (const key of PROVIDER_KEYS) {
+      cards[key].input.value = response.config?.[key]?.conversationUrl ?? "";
+      renderProvider(key, response.state?.providers?.[key]);
+    }
+    renderOverall(response.state);
   } catch (error) {
     showError(error);
   } finally {
@@ -46,16 +66,13 @@ async function load() {
   }
 }
 
-async function saveConfig() {
+async function saveProvider(provider) {
   clearError();
   setBusy(true);
   try {
-    const response = await chrome.runtime.sendMessage({
-      type: "save-config",
-      conversationUrl: urlInput.value,
-    });
-    assertOk(response);
-    render(response.state?.providers?.chatgpt);
+    const response = await saveProviderConfig(provider);
+    renderProvider(provider, response.state?.providers?.[provider]);
+    renderOverall(response.state);
   } catch (error) {
     showError(error);
   } finally {
@@ -63,24 +80,16 @@ async function saveConfig() {
   }
 }
 
-async function runNow() {
+async function runProvider(provider) {
   clearError();
   setBusy(true);
-  statusEl.textContent = "RUNNING";
-  statusEl.className = "status status-neutral";
-  summaryEl.textContent = "Running ChatGPT contract probe…";
-  detailsEl.hidden = true;
-
+  setRunning(provider);
   try {
-    const saveResponse = await chrome.runtime.sendMessage({
-      type: "save-config",
-      conversationUrl: urlInput.value,
-    });
-    assertOk(saveResponse);
-
-    const response = await chrome.runtime.sendMessage({ type: "run-now" });
+    await saveProviderConfig(provider);
+    const response = await chrome.runtime.sendMessage({ type: "run-now", provider });
     assertOk(response);
-    render(response.state?.providers?.chatgpt);
+    renderProvider(provider, response.state?.providers?.[provider]);
+    renderOverall(response.state);
   } catch (error) {
     showError(error);
   } finally {
@@ -88,12 +97,51 @@ async function runNow() {
   }
 }
 
-function render(provider) {
+async function runAll() {
+  clearError();
+  setBusy(true);
+  for (const key of PROVIDER_KEYS) setRunning(key);
+
+  try {
+    for (const key of PROVIDER_KEYS) await saveProviderConfig(key);
+    const response = await chrome.runtime.sendMessage({ type: "run-all" });
+    assertOk(response);
+    for (const key of PROVIDER_KEYS) {
+      renderProvider(key, response.state?.providers?.[key]);
+    }
+    renderOverall(response.state);
+  } catch (error) {
+    showError(error);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function saveProviderConfig(provider) {
+  const response = await chrome.runtime.sendMessage({
+    type: "save-config",
+    provider,
+    conversationUrl: cards[provider].input.value,
+  });
+  assertOk(response);
+  return response;
+}
+
+function setRunning(provider) {
+  const card = cards[provider];
+  card.status.textContent = "RUNNING";
+  card.status.className = "provider-status status status-neutral";
+  card.summary.textContent = `Running ${provider === "chatgpt" ? "ChatGPT" : "Claude"} contract probe…`;
+  card.details.hidden = true;
+}
+
+function renderProvider(providerKey, provider) {
+  const card = cards[providerKey];
   const status = provider?.status ?? "NOT_CONFIGURED";
-  statusEl.textContent = STATUS_LABEL[status] ?? status;
-  statusEl.className = `status ${STATUS_CLASS[status] ?? "status-neutral"}`;
-  checkedAtEl.textContent = formatTime(provider?.checkedAt);
-  summaryEl.textContent = provider?.summary ?? "No result yet.";
+  card.status.textContent = STATUS_LABEL[status] ?? status;
+  card.status.className = `provider-status status ${STATUS_CLASS[status] ?? "status-neutral"}`;
+  card.checkedAt.textContent = formatTime(provider?.checkedAt);
+  card.summary.textContent = provider?.summary ?? "No result yet.";
 
   const diagnostic = {};
   if (provider?.observedStatus && provider.observedStatus !== status) {
@@ -107,11 +155,27 @@ function render(provider) {
   if (provider?.topLevelKeys?.length) diagnostic.topLevelKeys = provider.topLevelKeys;
 
   if (Object.keys(diagnostic).length) {
-    detailsEl.textContent = JSON.stringify(diagnostic, null, 2);
-    detailsEl.hidden = false;
+    card.details.textContent = JSON.stringify(diagnostic, null, 2);
+    card.details.hidden = false;
   } else {
-    detailsEl.hidden = true;
+    card.details.hidden = true;
   }
+}
+
+function renderOverall(state) {
+  const statuses = PROVIDER_KEYS.map((key) => state?.providers?.[key]?.status ?? "NOT_CONFIGURED");
+  let status = "NOT_CONFIGURED";
+
+  if (statuses.includes("CONTRACT_MISMATCH")) {
+    status = "CONTRACT_MISMATCH";
+  } else if (statuses.some((item) => ["SUSPECT", "AUTH_REQUIRED", "NETWORK_ERROR", "HTTP_ERROR"].includes(item))) {
+    status = "SUSPECT";
+  } else if (statuses.includes("OK")) {
+    status = "OK";
+  }
+
+  overallStatusEl.textContent = STATUS_LABEL[status] ?? status;
+  overallStatusEl.className = `status ${STATUS_CLASS[status] ?? "status-neutral"}`;
 }
 
 function formatTime(value) {
@@ -122,9 +186,12 @@ function formatTime(value) {
 }
 
 function setBusy(busy) {
-  saveButton.disabled = busy;
-  runButton.disabled = busy;
-  urlInput.disabled = busy;
+  for (const card of Object.values(cards)) {
+    card.saveButton.disabled = busy;
+    card.runButton.disabled = busy;
+    card.input.disabled = busy;
+  }
+  runAllButton.disabled = busy;
 }
 
 function assertOk(response) {
