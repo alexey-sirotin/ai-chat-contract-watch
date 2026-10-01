@@ -6,7 +6,7 @@ The goal is to run probes inside a normal signed-in browser session, using the s
 
 ## Current scope
 
-The extension currently monitors ChatGPT and Claude.
+The extension currently monitors ChatGPT, Claude, and Grok.
 
 ### ChatGPT
 
@@ -26,6 +26,16 @@ The Claude probe mirrors AI Chat Export's current acquisition path:
 3. request `/api/organizations/<organization-id>/chat_conversations/<conversation-id>` with the same tree/rendering query used by the exporter;
 4. verify `chat_messages`, `current_leaf_message_uuid`, message UUIDs, iterable content blocks, sender roles, and the active parent chain.
 
+### Grok
+
+The Grok probe mirrors the exporter's current REST acquisition path:
+
+1. load a configured Grok canary conversation in the normal browser session;
+2. request `/rest/app-chat/conversations_v2/<conversation-id>?includeWorkspaces=true&includeTaskResult=true` for optional metadata;
+3. request `/rest/app-chat/conversations/<conversation-id>/responses?includeThreads=false` for the response tree;
+4. rebuild the active response branch using response ids, parent ids, mounted response ids, recency, and response order, matching AI Chat Export's branch-selection logic;
+5. verify the response/turn structure consumed by the Grok normalizer.
+
 The extension does not compare complete JSON responses byte-for-byte. New harmless fields should not trigger an alert.
 
 ## Status model
@@ -43,16 +53,17 @@ The toolbar badge summarizes all configured providers: red for a confirmed contr
 
 Use small dedicated conversations that you control and intend to keep.
 
-For ChatGPT, the validator needs at least one normal user message and one assistant message. For Claude, use at least one human message and one assistant response. Keep both canaries small so scheduled probes remain cheap.
+For ChatGPT, the validator needs at least one normal user message and one assistant message. For Claude, use at least one human message and one assistant response. For Grok, use at least one user turn and one assistant turn. Keep the canaries small so scheduled probes remain cheap.
 
 Typical URLs:
 
 ```text
 https://chatgpt.com/c/<conversation-uuid>
 https://claude.ai/chat/<conversation-uuid>
+https://grok.com/c/<conversation-uuid>
 ```
 
-Paste the URLs into the extension popup and click the provider's **Run now** button. **Run all configured** checks both providers sequentially.
+Paste the URLs into the extension popup and click the provider's **Run now** button. **Run all configured** checks configured providers sequentially.
 
 If a canary is not already open, the extension opens it in an inactive temporary tab, runs the probe in that provider's page context, and closes the tab afterward.
 
@@ -76,9 +87,13 @@ To load the extension in Chromium:
 3. enable **Developer mode**;
 4. choose **Load unpacked**;
 5. select the repository directory;
-6. open the extension popup, configure one or both canary URLs, and run the first checks manually.
+6. open the extension popup, configure one or more canary URLs, and run the first checks manually.
 
 The project currently targets Chromium Manifest V3. Firefox packaging can be added once the monitoring design is stable.
+
+## Structure
+
+`background.js` owns scheduling, shared status handling, retries, and toolbar state. Provider-specific page-context acquisition lives in `providers.js`, while pure response-shape validation lives in `contract.js`. This keeps adding the remaining provider from growing the background service worker into one large provider-specific file.
 
 ## Privacy
 
@@ -88,10 +103,10 @@ Canary requests are made only to the configured providers using the browser's ex
 
 ## Planned next steps
 
-- exercise the Claude probe against a real canary and harden failure classification;
+- exercise the Grok probe against a real canary and harden failure classification;
+- add DeepSeek as the fourth provider;
 - retain a small local history of probe results;
 - add a diagnostics page with useful response-shape information;
-- add Grok and DeepSeek probes incrementally;
 - add Firefox packaging after the monitoring design stabilizes.
 
 ## License

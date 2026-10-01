@@ -3,6 +3,7 @@ import {
   extractConversationId,
   validateChatGptConversation,
   validateClaudeConversation,
+  validateGrokConversation,
 } from "../contract.js";
 
 const CLAUDE_ROOT_PARENT = "00000000-0000-4000-8000-000000000000";
@@ -17,6 +18,12 @@ describe("extractConversationId", () => {
   it("extracts a conversation UUID from a Claude URL", () => {
     expect(
       extractConversationId("https://claude.ai/chat/123e4567-e89b-12d3-a456-426614174000")
+    ).toBe("123e4567-e89b-12d3-a456-426614174000");
+  });
+
+  it("extracts a conversation UUID from a Grok URL", () => {
+    expect(
+      extractConversationId("https://grok.com/c/123e4567-e89b-12d3-a456-426614174000")
     ).toBe("123e4567-e89b-12d3-a456-426614174000");
   });
 
@@ -191,5 +198,118 @@ describe("validateClaudeConversation", () => {
 
     expect(result.ok).toBe(false);
     expect(result.violations).toContain("active Claude message branch contains a cycle");
+  });
+});
+
+describe("validateGrokConversation", () => {
+  it("accepts the minimal active branch consumed by the Grok normalizer", () => {
+    const data = {
+      conversationId: "123e4567-e89b-12d3-a456-426614174000",
+      responses: [
+        {
+          responseId: "user-1",
+          sender: "human",
+          message: "ping",
+          parentResponseId: null,
+        },
+        {
+          responseId: "assistant-1",
+          sender: "assistant",
+          message: "pong",
+          parentResponseId: "user-1",
+        },
+      ],
+      turns: [
+        {
+          id: "user-1",
+          role: "user",
+          message: "ping",
+          cardAttachmentsJson: [],
+          fileAttachments: [],
+          parentResponseId: null,
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          message: "pong",
+          cardAttachmentsJson: [],
+          fileAttachments: [],
+          parentResponseId: "user-1",
+        },
+      ],
+    };
+
+    const result = validateGrokConversation(data);
+    expect(result.ok).toBe(true);
+    expect(result.violations).toEqual([]);
+    expect(result.stats.responses).toBe(2);
+    expect(result.stats.turns).toBe(2);
+    expect(result.stats.userTurns).toBe(1);
+    expect(result.stats.assistantTurns).toBe(1);
+  });
+
+  it("rejects a response without the raw responses array", () => {
+    const result = validateGrokConversation({
+      conversationId: "conversation-1",
+      turns: [],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContain("responses is missing or is not an array");
+  });
+
+  it("rejects a Grok active branch without an assistant turn", () => {
+    const result = validateGrokConversation({
+      conversationId: "conversation-1",
+      responses: [
+        { responseId: "user-1", sender: "human", message: "ping" },
+      ],
+      turns: [
+        {
+          id: "user-1",
+          role: "user",
+          message: "ping",
+          cardAttachmentsJson: [],
+          fileAttachments: [],
+          parentResponseId: null,
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContain("no assistant Grok turn was found");
+  });
+
+  it("rejects a turn that no longer maps back to a raw response id", () => {
+    const result = validateGrokConversation({
+      conversationId: "conversation-1",
+      responses: [
+        { responseId: "user-1", sender: "human", message: "ping" },
+        { responseId: "assistant-1", sender: "assistant", message: "pong" },
+      ],
+      turns: [
+        {
+          id: "user-1",
+          role: "user",
+          message: "ping",
+          cardAttachmentsJson: [],
+          fileAttachments: [],
+          parentResponseId: null,
+        },
+        {
+          id: "assistant-new",
+          role: "assistant",
+          message: "pong",
+          cardAttachmentsJson: [],
+          fileAttachments: [],
+          parentResponseId: "user-1",
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContain(
+      "Grok turn assistant-new is absent from the raw responses array",
+    );
   });
 });

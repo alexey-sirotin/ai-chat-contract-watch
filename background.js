@@ -3,7 +3,13 @@ import {
   extractConversationId,
   validateChatGptConversation,
   validateClaudeConversation,
+  validateGrokConversation,
 } from "./contract.js";
+import {
+  fetchChatGptConversationInPage,
+  fetchClaudeConversationInPage,
+  fetchGrokConversationInPage,
+} from "./providers.js";
 
 const CHECK_ALARM = "contract-watch-periodic";
 const RETRY_ALARM_PREFIX = "contract-watch-retry-";
@@ -30,13 +36,16 @@ const PROVIDERS = Object.freeze({
     },
     fetchInPage: fetchClaudeConversationInPage,
   },
+  grok: {
+    label: "Grok",
+    tabQuery: "https://grok.com/*",
+    validator: validateGrokConversation,
+    successSummary(stats) {
+      return `Grok contract looks compatible (${stats.responses} responses, ${stats.turns} active-branch turns).`;
+    },
+    fetchInPage: fetchGrokConversationInPage,
+  },
 });
-
-const DEFAULT_STATE = {
-  providers: Object.fromEntries(
-    Object.entries(PROVIDERS).map(([key, provider]) => [key, defaultProviderState(provider.label)]),
-  ),
-};
 
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.alarms.clear(LEGACY_RETRY_ALARM);
@@ -463,223 +472,4 @@ async function waitForTabComplete(tabId, timeoutMs, providerLabel) {
     chrome.tabs.onUpdated.addListener(onUpdated);
     chrome.tabs.onRemoved.addListener(onRemoved);
   });
-}
-
-async function fetchChatGptConversationInPage(tabId, conversationId) {
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    args: [conversationId],
-    func: async (id) => {
-      try {
-        const sessionResponse = await fetch("/api/auth/session", {
-          credentials: "include",
-        });
-
-        if (!sessionResponse.ok) {
-          return {
-            kind: "http-error",
-            stage: "auth/session",
-            status: sessionResponse.status,
-          };
-        }
-
-        let session;
-        try {
-          session = await sessionResponse.json();
-        } catch {
-          return {
-            kind: "invalid-json",
-            stage: "auth/session",
-            status: sessionResponse.status,
-          };
-        }
-
-        const accessToken = session?.accessToken;
-        if (!accessToken) {
-          return {
-            kind: "auth-required",
-            message: "ChatGPT session has no access token; sign in and retry.",
-          };
-        }
-
-        const conversationResponse = await fetch(
-          `/backend-api/conversation/${encodeURIComponent(id)}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-            credentials: "include",
-          },
-        );
-
-        if (!conversationResponse.ok) {
-          return {
-            kind: "http-error",
-            stage: "backend-api/conversation",
-            status: conversationResponse.status,
-          };
-        }
-
-        try {
-          return {
-            kind: "ok",
-            status: conversationResponse.status,
-            data: await conversationResponse.json(),
-          };
-        } catch {
-          return {
-            kind: "invalid-json",
-            stage: "backend-api/conversation",
-            status: conversationResponse.status,
-          };
-        }
-      } catch (error) {
-        return {
-          kind: "network-error",
-          message: error instanceof Error ? error.message : String(error),
-        };
-      }
-    },
-  });
-
-  return result;
-}
-
-async function fetchClaudeConversationInPage(tabId, conversationId) {
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    args: [conversationId],
-    func: async (id) => {
-      try {
-        const candidates = [];
-        const addCandidate = (value) => {
-          const candidate = typeof value === "string" ? value.trim() : "";
-          if (candidate && !candidates.includes(candidate)) candidates.push(candidate);
-        };
-
-        const marker = `/chat_conversations/${id}`;
-        const resources = performance.getEntriesByType("resource").map((entry) => entry.name);
-        for (let i = resources.length - 1; i >= 0; i--) {
-          try {
-            const url = new URL(resources[i], location.href);
-            if (!url.pathname.includes(marker)) continue;
-            const parts = url.pathname.split("/");
-            const orgIndex = parts.indexOf("organizations");
-            if (orgIndex >= 0 && parts[orgIndex + 1]) {
-              addCandidate(decodeURIComponent(parts[orgIndex + 1]));
-              break;
-            }
-          } catch {}
-        }
-
-        let organizationsStatus = null;
-        try {
-          const orgResponse = await fetch("/api/organizations", {
-            credentials: "include",
-          });
-          organizationsStatus = orgResponse.status;
-          if (orgResponse.ok) {
-            try {
-              const orgData = await orgResponse.json();
-              const organizations = Array.isArray(orgData)
-                ? orgData
-                : Array.isArray(orgData?.organizations)
-                  ? orgData.organizations
-                  : [];
-              for (const item of organizations) {
-                addCandidate(String(item?.uuid || item?.id || item?.organization_id || ""));
-              }
-            } catch {
-              // Match AI Chat Export: a resource-derived organization id may still work.
-            }
-          }
-        } catch (error) {
-          if (!candidates.length) {
-            return {
-              kind: "network-error",
-              message: error instanceof Error ? error.message : String(error),
-            };
-          }
-        }
-
-        if (!candidates.length) {
-          if (organizationsStatus === 401 || organizationsStatus === 403) {
-            return {
-              kind: "http-error",
-              stage: "api/organizations",
-              status: organizationsStatus,
-            };
-          }
-          if (organizationsStatus && organizationsStatus >= 400) {
-            return {
-              kind: "http-error",
-              stage: "api/organizations",
-              status: organizationsStatus,
-            };
-          }
-          return {
-            kind: "contract-error",
-            message: "Claude organization discovery returned no usable organization id.",
-            violation: "no organization id could be discovered from resource URLs or /api/organizations",
-          };
-        }
-
-        const query =
-          "?tree=True&rendering_mode=messages&render_all_tools=true" +
-          "&include_inline_comparison=true&consistency=strong";
-        const failures = [];
-
-        for (const organizationId of candidates) {
-          const response = await fetch(
-            "/api/organizations/" + encodeURIComponent(organizationId) +
-            "/chat_conversations/" + encodeURIComponent(id) + query,
-            { credentials: "include" },
-          );
-
-          if (!response.ok) {
-            failures.push({ status: response.status, organizationId });
-            continue;
-          }
-
-          try {
-            return {
-              kind: "ok",
-              status: response.status,
-              organizationId,
-              data: await response.json(),
-            };
-          } catch {
-            return {
-              kind: "invalid-json",
-              stage: "api/organizations/.../chat_conversations",
-              status: response.status,
-            };
-          }
-        }
-
-        const authFailure = failures.find((item) => item.status === 401 || item.status === 403);
-        const failure = authFailure || failures.at(-1);
-        if (failure) {
-          return {
-            kind: "http-error",
-            stage: "api/organizations/.../chat_conversations",
-            status: failure.status,
-          };
-        }
-
-        return {
-          kind: "contract-error",
-          message: "Claude conversation endpoint was not attempted because no organization candidate remained.",
-          violation: "Claude organization candidate list became empty before conversation acquisition",
-        };
-      } catch (error) {
-        return {
-          kind: "network-error",
-          message: error instanceof Error ? error.message : String(error),
-        };
-      }
-    },
-  });
-
-  return result;
 }
