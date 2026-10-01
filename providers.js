@@ -371,3 +371,198 @@ export async function fetchGrokConversationInPage(tabId, conversationId) {
 
   return result;
 }
+
+export async function fetchDeepSeekConversationInPage(tabId, conversationId) {
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    args: [conversationId],
+    func: async (id) => {
+      try {
+        let token = "";
+        try {
+          const stored = JSON.parse(localStorage.getItem("userToken") || "null");
+          token = typeof stored?.value === "string" ? stored.value : "";
+        } catch {}
+
+        if (!token) {
+          return {
+            kind: "auth-required",
+            message: "DeepSeek user token is missing; sign in and retry.",
+          };
+        }
+
+        const response = await fetch(
+          "/api/v0/chat/history_messages?chat_session_id=" + encodeURIComponent(id),
+          {
+            credentials: "include",
+            headers: {
+              Accept: "application/json",
+              Authorization: "Bearer " + token,
+            },
+          },
+        );
+
+        if (!response.ok) {
+          return {
+            kind: "http-error",
+            stage: "api/v0/chat/history_messages",
+            status: response.status,
+          };
+        }
+
+        let payload;
+        try {
+          payload = await response.json();
+        } catch {
+          return {
+            kind: "invalid-json",
+            stage: "api/v0/chat/history_messages",
+            status: response.status,
+          };
+        }
+
+        if (payload?.code !== 0) {
+          return {
+            kind: "provider-error",
+            message: `DeepSeek history API returned code ${payload?.code ?? "unknown"}: ${payload?.msg || "unknown error"}.`,
+          };
+        }
+
+        const envelope = payload?.data;
+        if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) {
+          return {
+            kind: "contract-error",
+            message: "DeepSeek history API returned no data envelope.",
+            violation: "payload.data is missing or is not an object",
+          };
+        }
+
+        if (envelope.biz_code !== 0) {
+          return {
+            kind: "provider-error",
+            message: `DeepSeek history business API returned code ${envelope.biz_code ?? "unknown"}: ${envelope.biz_msg || "unknown error"}.`,
+          };
+        }
+
+        const biz = envelope.biz_data;
+        if (!biz || typeof biz !== "object" || Array.isArray(biz)) {
+          return {
+            kind: "contract-error",
+            message: "DeepSeek history API returned no biz_data object.",
+            violation: "payload.data.biz_data is missing or is not an object",
+          };
+        }
+
+        const session = biz.chat_session;
+        if (!session || typeof session !== "object" || Array.isArray(session)) {
+          return {
+            kind: "contract-error",
+            message: "DeepSeek history API returned no chat_session object.",
+            violation: "biz_data.chat_session is missing or is not an object",
+          };
+        }
+
+        if (!Array.isArray(biz.chat_messages)) {
+          return {
+            kind: "contract-error",
+            message: "DeepSeek history API returned no chat_messages array.",
+            violation: "biz_data.chat_messages is missing or is not an array",
+          };
+        }
+
+        if (session.current_message_id == null) {
+          return {
+            kind: "contract-error",
+            message: "DeepSeek chat_session has no current_message_id.",
+            violation: "chat_session.current_message_id is missing",
+          };
+        }
+
+        const messages = biz.chat_messages;
+        const byId = new Map(
+          messages
+            .filter((item) => item?.message_id != null)
+            .map((item) => [String(item.message_id), item]),
+        );
+        const currentMessageId = String(session.current_message_id);
+        if (!byId.has(currentMessageId)) {
+          return {
+            kind: "contract-error",
+            message: "DeepSeek current_message_id is absent from chat_messages.",
+            violation: "chat_messages does not contain chat_session.current_message_id",
+          };
+        }
+
+        const branch = [];
+        const seen = new Set();
+        let current = byId.get(currentMessageId);
+        while (current?.message_id != null) {
+          const currentId = String(current.message_id);
+          if (seen.has(currentId)) {
+            return {
+              kind: "contract-error",
+              message: "DeepSeek active message branch contains a cycle.",
+              violation: "active DeepSeek message parent chain contains a cycle",
+            };
+          }
+          seen.add(currentId);
+          branch.push(current);
+          if (current.parent_id == null) break;
+          const parentId = String(current.parent_id);
+          current = byId.get(parentId);
+          if (!current) {
+            return {
+              kind: "contract-error",
+              message: `DeepSeek active branch references missing parent ${parentId}.`,
+              violation: "active DeepSeek message parent chain references a missing message",
+            };
+          }
+        }
+        branch.reverse();
+
+        const turns = branch
+          .map((item) => {
+            const rawRole = String(item.role || "").toUpperCase();
+            const role = rawRole === "USER"
+              ? "user"
+              : rawRole === "ASSISTANT"
+                ? "assistant"
+                : "unknown";
+            return {
+              id: String(item.message_id),
+              parentId: item.parent_id == null ? null : String(item.parent_id),
+              role,
+              model: item.model || null,
+              insertedAt: Number.isFinite(Number(item.inserted_at))
+                ? Number(item.inserted_at)
+                : null,
+              sourceFragmentsArray: Array.isArray(item.fragments),
+              fragments: Array.isArray(item.fragments) ? item.fragments : [],
+            };
+          })
+          .filter((turn) => turn.role !== "unknown");
+
+        return {
+          kind: "ok",
+          status: response.status,
+          data: {
+            conversationId: id,
+            title: session.title || document.title.replace(/\s*[|–-]\s*DeepSeek.*$/i, ""),
+            currentMessageId,
+            version: session.version ?? null,
+            rawMessageCount: messages.length,
+            turns,
+          },
+        };
+      } catch (error) {
+        return {
+          kind: "network-error",
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
+
+  return result;
+}
