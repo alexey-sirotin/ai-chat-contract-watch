@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AI Chat Contract Watch",
-  "version": "0.4.0",
-  "description": "Privately monitors AI chat server contracts used by AI Chat Export.",
+  "version": "0.5.0",
+  "description": "Privately monitors AI chat API and selection DOM contracts used by AI Chat Export.",
   "permissions": [
     "alarms",
     "scripting",
