@@ -43,7 +43,7 @@ section {
   border: 1px solid #dbe3ec;
   border-radius: 8px;
   background: #fff;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .provider-title {
@@ -51,20 +51,22 @@ section {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 7px;
+  margin-bottom: 8px;
+}
+
+.probe-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .component-statuses {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  margin-bottom: 10px;
-}
-
-label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: 600;
+  margin-left: auto;
 }
 
 input {
@@ -83,7 +85,7 @@ input {
 }
 
 .buttons {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .top-actions {
@@ -139,26 +141,29 @@ button:disabled {
   background: #e5e7eb;
 }
 
+.config,
 .result {
-  margin-top: 12px;
-  padding-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid #e5e7eb;
 }
 
+.config > summary,
 .result .row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   color: #64748b;
   cursor: pointer;
   list-style: none;
 }
 
+.config > summary::-webkit-details-marker,
 .result .row::-webkit-details-marker {
   display: none;
 }
 
+.config > summary::before,
 .result .row::before {
   content: "▸";
   flex: none;
@@ -166,8 +171,21 @@ button:disabled {
   color: #94a3b8;
 }
 
+.config[open] > summary::before,
 .result[open] .row::before {
   content: "▾";
+}
+
+.config > summary {
+  font-weight: 600;
+}
+
+.config-body {
+  margin-top: 8px;
+}
+
+.result .row {
+  justify-content: space-between;
 }
 
 .result strong {
