@@ -21,7 +21,9 @@ jobs:
 
       - name: Check extension script syntax
         run: |
+          node --check background-wrapper.js
           node --check background.js
+          node --check action-icon.js
           node --check contract.js
           node --check providers.js
           node --check dom-contract.js
