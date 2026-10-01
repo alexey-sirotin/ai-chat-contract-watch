@@ -136,20 +136,23 @@ export function validateClaudeConversation(data) {
   if (leafId && byId.has(leafId)) {
     const seen = new Set();
     let id = leafId;
-    while (id && !seen.has(id)) {
+    while (id) {
+      if (seen.has(id)) {
+        violations.push("active Claude message branch contains a cycle");
+        break;
+      }
       seen.add(id);
+
       const message = byId.get(id);
       if (!message) {
         violations.push(`active branch references missing parent message ${id}`);
         break;
       }
+
       stats.activeBranchMessages += 1;
       const parent = message.parent_message_uuid;
       if (!parent || parent === CLAUDE_ROOT_PARENT) break;
       id = parent;
-    }
-    if (id && seen.has(id) && id !== leafId) {
-      violations.push("active Claude message branch contains a cycle");
     }
   }
 
@@ -157,9 +160,10 @@ export function validateClaudeConversation(data) {
   if (stats.humanMessages === 0) violations.push("no human Claude message was found");
   if (stats.assistantMessages === 0) violations.push("no assistant Claude message was found");
 
+  const uniqueViolations = [...new Set(violations)];
   return {
-    ok: violations.length === 0,
-    violations: [...new Set(violations)],
+    ok: uniqueViolations.length === 0,
+    violations: uniqueViolations,
     stats,
     topLevelKeys,
   };
