@@ -169,6 +169,108 @@ export function validateClaudeConversation(data) {
   };
 }
 
+export function validateGrokConversation(data) {
+  const violations = [];
+  const stats = {
+    responses: 0,
+    responseIds: 0,
+    controlResponses: 0,
+    turns: 0,
+    userTurns: 0,
+    assistantTurns: 0,
+    turnsWithCards: 0,
+    turnsWithFiles: 0,
+  };
+
+  if (!isObject(data)) {
+    return invalidObjectResult(stats);
+  }
+
+  const topLevelKeys = Object.keys(data).sort();
+
+  if (typeof data.conversationId !== "string" || !data.conversationId) {
+    violations.push("conversationId is missing or is not a non-empty string");
+  }
+
+  if (!Array.isArray(data.responses)) {
+    violations.push("responses is missing or is not an array");
+    return { ok: false, violations, stats, topLevelKeys };
+  }
+
+  if (!Array.isArray(data.turns)) {
+    violations.push("turns is missing or is not an array");
+    return { ok: false, violations, stats, topLevelKeys };
+  }
+
+  const responseIds = new Set();
+  for (const response of data.responses) {
+    if (!isObject(response)) {
+      violations.push("at least one Grok response is not an object");
+      continue;
+    }
+
+    stats.responses += 1;
+    if (response.isControl === true) stats.controlResponses += 1;
+    if (response.responseId != null && String(response.responseId)) {
+      responseIds.add(String(response.responseId));
+      stats.responseIds += 1;
+    }
+  }
+
+  for (const turn of data.turns) {
+    if (!isObject(turn)) {
+      violations.push("at least one Grok active-branch turn is not an object");
+      continue;
+    }
+
+    stats.turns += 1;
+    const id = typeof turn.id === "string" ? turn.id : "";
+    if (!id) {
+      violations.push("at least one Grok turn has no non-empty id");
+    } else if (!responseIds.has(id)) {
+      violations.push(`Grok turn ${id} is absent from the raw responses array`);
+    }
+
+    if (turn.role === "user") stats.userTurns += 1;
+    else if (turn.role === "assistant") stats.assistantTurns += 1;
+    else violations.push("at least one Grok turn has an unrecognized role");
+
+    if (typeof turn.message !== "string") {
+      violations.push("at least one Grok turn has a non-string message");
+    }
+    if (!Array.isArray(turn.cardAttachmentsJson)) {
+      violations.push("at least one Grok turn has non-array cardAttachmentsJson");
+    } else if (turn.cardAttachmentsJson.length) {
+      stats.turnsWithCards += 1;
+    }
+    if (!Array.isArray(turn.fileAttachments)) {
+      violations.push("at least one Grok turn has non-array fileAttachments");
+    } else if (turn.fileAttachments.length) {
+      stats.turnsWithFiles += 1;
+    }
+    if (
+      turn.parentResponseId != null &&
+      typeof turn.parentResponseId !== "string"
+    ) {
+      violations.push("at least one Grok turn has a non-string parentResponseId");
+    }
+  }
+
+  if (stats.responses === 0) violations.push("responses is empty");
+  if (stats.responseIds === 0) violations.push("responses contains no responseId values");
+  if (stats.turns === 0) violations.push("active Grok branch contains no recognized turns");
+  if (stats.userTurns === 0) violations.push("no user Grok turn was found");
+  if (stats.assistantTurns === 0) violations.push("no assistant Grok turn was found");
+
+  const uniqueViolations = [...new Set(violations)];
+  return {
+    ok: uniqueViolations.length === 0,
+    violations: uniqueViolations,
+    stats,
+    topLevelKeys,
+  };
+}
+
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
