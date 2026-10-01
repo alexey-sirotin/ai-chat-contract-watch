@@ -23,6 +23,7 @@ jobs:
         run: |
           node --check background.js
           node --check contract.js
+          node --check providers.js
           node --check popup.js
 
       - name: Run tests
