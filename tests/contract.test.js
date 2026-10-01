@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   extractConversationId,
+  extractDeepSeekConversationId,
   validateChatGptConversation,
   validateClaudeConversation,
   validateGrokConversation,
+  validateDeepSeekConversation,
 } from "../contract.js";
 
 const CLAUDE_ROOT_PARENT = "00000000-0000-4000-8000-000000000000";
@@ -29,6 +31,18 @@ describe("extractConversationId", () => {
 
   it("returns null when no UUID is present", () => {
     expect(extractConversationId("https://chatgpt.com/")).toBeNull();
+  });
+});
+
+describe("extractDeepSeekConversationId", () => {
+  it("extracts a DeepSeek session id without assuming UUID format", () => {
+    expect(
+      extractDeepSeekConversationId("https://chat.deepseek.com/a/chat/s/session_abc-123")
+    ).toBe("session_abc-123");
+  });
+
+  it("returns null for a non-conversation DeepSeek URL", () => {
+    expect(extractDeepSeekConversationId("https://chat.deepseek.com/")).toBeNull();
   });
 });
 
@@ -310,6 +324,98 @@ describe("validateGrokConversation", () => {
     expect(result.ok).toBe(false);
     expect(result.violations).toContain(
       "Grok turn assistant-new is absent from the raw responses array",
+    );
+  });
+});
+
+describe("validateDeepSeekConversation", () => {
+  it("accepts the minimal active branch consumed by the DeepSeek normalizer", () => {
+    const data = {
+      conversationId: "session_abc-123",
+      currentMessageId: "2",
+      rawMessageCount: 2,
+      turns: [
+        {
+          id: "1",
+          parentId: null,
+          role: "user",
+          sourceFragmentsArray: true,
+          fragments: [{ type: "REQUEST", content: "ping" }],
+        },
+        {
+          id: "2",
+          parentId: "1",
+          role: "assistant",
+          sourceFragmentsArray: true,
+          fragments: [{ type: "RESPONSE", content: "pong" }],
+        },
+      ],
+    };
+
+    const result = validateDeepSeekConversation(data);
+    expect(result.ok).toBe(true);
+    expect(result.violations).toEqual([]);
+    expect(result.stats.rawMessages).toBe(2);
+    expect(result.stats.turns).toBe(2);
+    expect(result.stats.requestFragments).toBe(1);
+    expect(result.stats.responseFragments).toBe(1);
+  });
+
+  it("rejects a branch whose current message is not the final turn", () => {
+    const result = validateDeepSeekConversation({
+      conversationId: "session-1",
+      currentMessageId: "3",
+      rawMessageCount: 2,
+      turns: [
+        {
+          id: "1",
+          parentId: null,
+          role: "user",
+          sourceFragmentsArray: true,
+          fragments: [{ type: "REQUEST", content: "ping" }],
+        },
+        {
+          id: "2",
+          parentId: "1",
+          role: "assistant",
+          sourceFragmentsArray: true,
+          fragments: [{ type: "RESPONSE", content: "pong" }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContain(
+      "active DeepSeek branch does not end at currentMessageId",
+    );
+  });
+
+  it("rejects a non-array source fragments field", () => {
+    const result = validateDeepSeekConversation({
+      conversationId: "session-1",
+      currentMessageId: "2",
+      rawMessageCount: 2,
+      turns: [
+        {
+          id: "1",
+          parentId: null,
+          role: "user",
+          sourceFragmentsArray: false,
+          fragments: [],
+        },
+        {
+          id: "2",
+          parentId: "1",
+          role: "assistant",
+          sourceFragmentsArray: true,
+          fragments: [{ type: "RESPONSE", content: "pong" }],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.violations).toContain(
+      "at least one DeepSeek source message no longer has an array fragments field",
     );
   });
 });
