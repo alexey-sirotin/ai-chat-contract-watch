@@ -70,9 +70,15 @@ The extension does not compare complete JSON responses or whole DOM trees byte-f
 - `NETWORK_ERROR` / `HTTP_ERROR` — the provider could not be checked reliably;
 - `NOT_CONFIGURED` — no canary conversation has been configured yet.
 
-Application-level provider errors that are not structural contract mismatches are reported as a yellow problem state rather than a red contract alert. If the API probe is inconclusive because of auth/network/HTTP failure, a simultaneous DOM miss does not by itself escalate the provider to a confirmed contract mismatch.
+Application-level provider errors that are not structural contract mismatches remain distinguishable in the popup. If the API probe is inconclusive because of auth/network/HTTP failure, a simultaneous DOM miss does not by itself escalate the provider to a confirmed contract mismatch.
 
-The toolbar badge summarizes all configured providers: red for a confirmed contract mismatch, yellow for inconclusive/problem states, green when at least one configured provider is healthy and none has a problem, and gray before configuration.
+The toolbar icon is deliberately simpler than the popup status model:
+
+- gray `AI` circle — no usable check data yet;
+- green `AI` circle — at least one configured provider is healthy and none has a problem;
+- red `AI` circle — any configured provider is `SUSPECT`, requires auth, has a network/HTTP problem, or has a confirmed contract mismatch.
+
+The icon is drawn deterministically in the extension service worker with flat colors and simple geometric letter shapes, so it does not depend on generated image assets.
 
 ## Canary conversations
 
@@ -97,7 +103,7 @@ If a canary is not already open, the extension opens it in an inactive temporary
 
 ## Schedule
 
-Normal probes run every 12 hours. A first structural mismatch in either component schedules a provider-specific confirmation probe five minutes later before the toolbar turns red.
+Normal probes run every 12 hours. A first structural mismatch in either component schedules a provider-specific confirmation probe five minutes later before the mismatch is promoted from `SUSPECT` to `CONTRACT_MISMATCH`.
 
 ## Local development
 
@@ -121,7 +127,7 @@ The project currently targets Chromium Manifest V3. Firefox packaging can be add
 
 ## Structure
 
-`background.js` owns scheduling, shared status handling, retries, aggregate API/DOM results, and toolbar state. Provider-specific page-context acquisition lives in `providers.js`; provider response-shape validation lives in `contract.js`; selection markup collection lives in `dom-probes.js`; pure DOM contract validation lives in `dom-contract.js`.
+`background.js` owns scheduling, shared status handling, retries, and aggregate API/DOM results. `background-wrapper.js` keeps the aggregate toolbar icon synchronized with locally stored state, while `action-icon.js` contains the deterministic icon-state mapping and drawing code. Provider-specific page-context acquisition lives in `providers.js`; provider response-shape validation lives in `contract.js`; selection markup collection lives in `dom-probes.js`; pure DOM contract validation lives in `dom-contract.js`.
 
 ## Privacy
 
@@ -131,7 +137,6 @@ Canary requests are made only to the configured providers using the browser's ex
 
 ## Planned next steps
 
-- exercise the API + DOM probes against all four live canaries and harden any provider-specific false positives;
 - retain a small local history of probe results;
 - add a diagnostics page with useful response-shape and DOM-shape information;
 - add Firefox packaging after the monitoring design stabilizes.
