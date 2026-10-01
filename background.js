@@ -13,6 +13,8 @@ import {
   fetchGrokConversationInPage,
   fetchDeepSeekConversationInPage,
 } from "./providers.js";
+import { probeSelectionDomInPage } from "./dom-probes.js";
+import { validateSelectionDom } from "./dom-contract.js";
 
 const CHECK_ALARM = "contract-watch-periodic";
 const RETRY_ALARM_PREFIX = "contract-watch-retry-";
@@ -27,7 +29,7 @@ const PROVIDERS = Object.freeze({
     validator: validateChatGptConversation,
     idFromUrl: extractConversationId,
     successSummary(stats) {
-      return `ChatGPT contract looks compatible (${stats.messages} messages, ${stats.mappingNodes} mapping nodes).`;
+      return `ChatGPT API contract looks compatible (${stats.messages} messages, ${stats.mappingNodes} mapping nodes).`;
     },
     fetchInPage: fetchChatGptConversationInPage,
   },
@@ -37,7 +39,7 @@ const PROVIDERS = Object.freeze({
     validator: validateClaudeConversation,
     idFromUrl: extractConversationId,
     successSummary(stats) {
-      return `Claude contract looks compatible (${stats.messages} messages, ${stats.activeBranchMessages} active-branch messages).`;
+      return `Claude API contract looks compatible (${stats.messages} messages, ${stats.activeBranchMessages} active-branch messages).`;
     },
     fetchInPage: fetchClaudeConversationInPage,
   },
@@ -47,7 +49,7 @@ const PROVIDERS = Object.freeze({
     validator: validateGrokConversation,
     idFromUrl: extractConversationId,
     successSummary(stats) {
-      return `Grok contract looks compatible (${stats.responses} responses, ${stats.turns} active-branch turns).`;
+      return `Grok API contract looks compatible (${stats.responses} responses, ${stats.turns} active-branch turns).`;
     },
     fetchInPage: fetchGrokConversationInPage,
   },
@@ -57,7 +59,7 @@ const PROVIDERS = Object.freeze({
     validator: validateDeepSeekConversation,
     idFromUrl: extractDeepSeekConversationId,
     successSummary(stats) {
-      return `DeepSeek contract looks compatible (${stats.rawMessages} messages, ${stats.turns} active-branch turns, ${stats.fragments} fragments).`;
+      return `DeepSeek API contract looks compatible (${stats.rawMessages} messages, ${stats.turns} active-branch turns, ${stats.fragments} fragments).`;
     },
     fetchInPage: fetchDeepSeekConversationInPage,
   },
@@ -144,6 +146,10 @@ function defaultProviderState(label) {
   return {
     status: ProbeStatus.NOT_CONFIGURED,
     observedStatus: ProbeStatus.NOT_CONFIGURED,
+    apiStatus: ProbeStatus.NOT_CONFIGURED,
+    domStatus: ProbeStatus.NOT_CONFIGURED,
+    apiSummary: `${label} API canary is not configured.`,
+    domSummary: `${label} DOM canary is not configured.`,
     checkedAt: null,
     summary: `${label} canary is not configured.`,
     violations: [],
@@ -264,6 +270,7 @@ async function runProviderProbe(providerKey, { retry }) {
   await setRunningBadge();
 
   const observation = await observeInConversationTab({
+    providerKey,
     conversationUrl,
     conversationId,
     tabQuery: provider.tabQuery,
@@ -271,7 +278,14 @@ async function runProviderProbe(providerKey, { retry }) {
     fetchInPage: provider.fetchInPage,
   });
 
-  const interpreted = interpretObservation(observation, provider);
+  const apiResult = interpretApiObservation(observation.api, provider);
+  const domResult = interpretDomObservation(
+    observation.dom,
+    providerKey,
+    observation.api?.kind === "ok" ? observation.api.data : null,
+    provider,
+  );
+  const interpreted = combineComponentResults(apiResult, domResult, provider);
   const result = applyFailureConfirmation(interpreted, previous, retry);
   state.providers[providerKey] = result;
   await saveState(state);
@@ -289,6 +303,7 @@ async function runProviderProbe(providerKey, { retry }) {
 }
 
 async function observeInConversationTab({
+  providerKey,
   conversationUrl,
   conversationId,
   tabQuery,
@@ -308,12 +323,34 @@ async function observeInConversationTab({
 
     if (!tab?.id) throw new Error(`Could not create or locate a ${providerLabel} tab.`);
     await waitForTabComplete(tab.id, 30_000, providerLabel);
-    return await fetchInPage(tab.id, conversationId);
+
+    let api;
+    try {
+      api = await fetchInPage(tab.id, conversationId);
+    } catch (error) {
+      api = {
+        kind: "network-error",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    let dom;
+    try {
+      dom = await probeSelectionDomInPage(tab.id, providerKey);
+    } catch (error) {
+      dom = {
+        kind: "network-error",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    return { api, dom };
   } catch (error) {
-    return {
+    const failure = {
       kind: "network-error",
       message: error instanceof Error ? error.message : String(error),
     };
+    return { api: failure, dom: failure };
   } finally {
     if (temporaryTabId !== null) {
       try {
@@ -325,23 +362,17 @@ async function observeInConversationTab({
   }
 }
 
-function interpretObservation(observation, provider) {
-  const checkedAt = new Date().toISOString();
+function interpretApiObservation(observation, provider) {
   const base = {
-    checkedAt,
+    status: ProbeStatus.NETWORK_ERROR,
+    observedStatus: ProbeStatus.NETWORK_ERROR,
+    summary: "Probe returned no structured result.",
     violations: [],
     stats: null,
     topLevelKeys: [],
   };
 
-  if (!observation || typeof observation !== "object") {
-    return {
-      ...base,
-      status: ProbeStatus.NETWORK_ERROR,
-      observedStatus: ProbeStatus.NETWORK_ERROR,
-      summary: "Probe returned no structured result.",
-    };
-  }
+  if (!observation || typeof observation !== "object") return base;
 
   if (observation.kind === "auth-required") {
     return {
@@ -355,8 +386,6 @@ function interpretObservation(observation, provider) {
   if (observation.kind === "network-error") {
     return {
       ...base,
-      status: ProbeStatus.NETWORK_ERROR,
-      observedStatus: ProbeStatus.NETWORK_ERROR,
       summary: observation.message || `${provider.label} request failed before a usable response arrived.`,
     };
   }
@@ -405,9 +434,7 @@ function interpretObservation(observation, provider) {
   if (observation.kind !== "ok") {
     return {
       ...base,
-      status: ProbeStatus.NETWORK_ERROR,
-      observedStatus: ProbeStatus.NETWORK_ERROR,
-      summary: `Unexpected probe result: ${observation.kind ?? "unknown"}.`,
+      summary: `Unexpected API probe result: ${observation.kind ?? "unknown"}.`,
     };
   }
 
@@ -417,7 +444,7 @@ function interpretObservation(observation, provider) {
       ...base,
       status: ProbeStatus.CONTRACT_MISMATCH,
       observedStatus: ProbeStatus.CONTRACT_MISMATCH,
-      summary: `${provider.label} returned HTTP 200, but ${validation.violations.length} contract invariant(s) failed.`,
+      summary: `${provider.label} returned HTTP 200, but ${validation.violations.length} API contract invariant(s) failed.`,
       violations: validation.violations,
       stats: validation.stats,
       topLevelKeys: validation.topLevelKeys,
@@ -431,6 +458,95 @@ function interpretObservation(observation, provider) {
     summary: provider.successSummary(validation.stats),
     stats: validation.stats,
     topLevelKeys: validation.topLevelKeys,
+  };
+}
+
+function interpretDomObservation(observation, providerKey, apiData, provider) {
+  const base = {
+    status: ProbeStatus.NETWORK_ERROR,
+    observedStatus: ProbeStatus.NETWORK_ERROR,
+    summary: "DOM probe returned no structured result.",
+    violations: [],
+    stats: null,
+  };
+
+  if (!observation || typeof observation !== "object") return base;
+
+  if (observation.kind === "network-error") {
+    return {
+      ...base,
+      summary: observation.message || `${provider.label} DOM probe failed before a usable snapshot arrived.`,
+    };
+  }
+
+  if (observation.kind !== "ok") {
+    return {
+      ...base,
+      summary: `Unexpected DOM probe result: ${observation.kind ?? "unknown"}.`,
+    };
+  }
+
+  const validation = validateSelectionDom(providerKey, observation.data, apiData);
+  if (!validation.ok) {
+    return {
+      ...base,
+      status: ProbeStatus.CONTRACT_MISMATCH,
+      observedStatus: ProbeStatus.CONTRACT_MISMATCH,
+      summary: `${provider.label} selection DOM failed ${validation.violations.length} invariant(s).`,
+      violations: validation.violations,
+      stats: validation.stats,
+    };
+  }
+
+  return {
+    ...base,
+    status: ProbeStatus.OK,
+    observedStatus: ProbeStatus.OK,
+    summary: `${provider.label} selection DOM looks compatible (${validation.stats.recognizedTurns ?? validation.stats.uniqueIndexes ?? 0} recognized message nodes).`,
+    stats: validation.stats,
+  };
+}
+
+function combineComponentResults(api, dom, provider) {
+  const apiStatus = api.observedStatus;
+  const domStatus = dom.observedStatus;
+  const inconclusiveApi = [
+    ProbeStatus.AUTH_REQUIRED,
+    ProbeStatus.NETWORK_ERROR,
+    ProbeStatus.HTTP_ERROR,
+  ].includes(apiStatus);
+
+  let observedStatus = ProbeStatus.OK;
+  if (apiStatus === ProbeStatus.CONTRACT_MISMATCH) {
+    observedStatus = ProbeStatus.CONTRACT_MISMATCH;
+  } else if (inconclusiveApi) {
+    observedStatus = apiStatus;
+  } else if (domStatus === ProbeStatus.CONTRACT_MISMATCH) {
+    observedStatus = ProbeStatus.CONTRACT_MISMATCH;
+  } else if (domStatus !== ProbeStatus.OK) {
+    observedStatus = domStatus;
+  }
+
+  const violations = [
+    ...(api.violations || []).map((item) => `API: ${item}`),
+    ...(dom.violations || []).map((item) => `DOM: ${item}`),
+  ];
+
+  return {
+    status: observedStatus,
+    observedStatus,
+    apiStatus,
+    domStatus,
+    apiSummary: api.summary,
+    domSummary: dom.summary,
+    checkedAt: new Date().toISOString(),
+    summary: `${provider.label} — API ${apiStatus}; DOM ${domStatus}.`,
+    violations,
+    stats: {
+      api: api.stats,
+      dom: dom.stats,
+    },
+    topLevelKeys: api.topLevelKeys || [],
   };
 }
 

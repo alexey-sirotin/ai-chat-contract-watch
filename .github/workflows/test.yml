@@ -24,6 +24,8 @@ jobs:
           node --check background.js
           node --check contract.js
           node --check providers.js
+          node --check dom-contract.js
+          node --check dom-probes.js
           node --check popup.js
 
       - name: Run tests

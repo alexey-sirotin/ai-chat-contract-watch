@@ -49,6 +49,8 @@ function providerCard(key) {
     saveButton: root.querySelector(".save"),
     runButton: root.querySelector(".run"),
     status: root.querySelector(".provider-status"),
+    apiStatus: root.querySelector(".api-status"),
+    domStatus: root.querySelector(".dom-status"),
     checkedAt: root.querySelector(".checked-at"),
     summary: root.querySelector(".summary"),
     details: root.querySelector(".details"),
@@ -137,21 +139,36 @@ function setRunning(provider) {
   const card = cards[provider];
   card.status.textContent = "RUNNING";
   card.status.className = "provider-status status status-neutral";
-  card.summary.textContent = `Running ${PROVIDER_LABEL[provider]} contract probe…`;
+  renderComponentStatus(card.apiStatus, "API", "RUNNING");
+  renderComponentStatus(card.domStatus, "DOM", "RUNNING");
+  card.summary.textContent = `Running ${PROVIDER_LABEL[provider]} API and DOM probes…`;
   card.details.hidden = true;
 }
 
 function renderProvider(providerKey, provider) {
   const card = cards[providerKey];
   const status = provider?.status ?? "NOT_CONFIGURED";
-  card.status.textContent = STATUS_LABEL[status] ?? status;
-  card.status.className = `provider-status status ${STATUS_CLASS[status] ?? "status-neutral"}`;
+  renderStatus(card.status, status, false);
+  renderComponentStatus(card.apiStatus, "API", provider?.apiStatus ?? "NOT_CONFIGURED");
+  renderComponentStatus(card.domStatus, "DOM", provider?.domStatus ?? "NOT_CONFIGURED");
   card.checkedAt.textContent = formatTime(provider?.checkedAt);
   card.summary.textContent = provider?.summary ?? "No result yet.";
 
   const diagnostic = {};
   if (provider?.observedStatus && provider.observedStatus !== status) {
     diagnostic.observedStatus = provider.observedStatus;
+  }
+  if (provider?.apiSummary || provider?.domSummary) {
+    diagnostic.components = {
+      api: {
+        status: provider?.apiStatus ?? "NOT_CONFIGURED",
+        summary: provider?.apiSummary ?? "",
+      },
+      dom: {
+        status: provider?.domStatus ?? "NOT_CONFIGURED",
+        summary: provider?.domSummary ?? "",
+      },
+    };
   }
   if (provider?.consecutiveContractFailures) {
     diagnostic.consecutiveContractFailures = provider.consecutiveContractFailures;
@@ -166,6 +183,21 @@ function renderProvider(providerKey, provider) {
   } else {
     card.details.hidden = true;
   }
+}
+
+function renderComponentStatus(element, prefix, status) {
+  if (status === "RUNNING") {
+    element.textContent = `${prefix}: RUNNING`;
+    element.className = `${prefix.toLowerCase()}-status status status-neutral`;
+    return;
+  }
+  element.textContent = `${prefix}: ${STATUS_LABEL[status] ?? status}`;
+  element.className = `${prefix.toLowerCase()}-status status ${STATUS_CLASS[status] ?? "status-neutral"}`;
+}
+
+function renderStatus(element, status, withPrefix) {
+  element.textContent = withPrefix ? `STATUS: ${STATUS_LABEL[status] ?? status}` : (STATUS_LABEL[status] ?? status);
+  element.className = `provider-status status ${STATUS_CLASS[status] ?? "status-neutral"}`;
 }
 
 function renderOverall(state) {
