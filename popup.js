@@ -22,6 +22,7 @@ const PROVIDER_LABEL = {
   chatgpt: "ChatGPT",
   claude: "Claude",
   grok: "Grok",
+  deepseek: "DeepSeek",
 };
 const PROVIDER_KEYS = Object.keys(PROVIDER_LABEL);
 const cards = Object.fromEntries(

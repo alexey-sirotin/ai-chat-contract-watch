@@ -92,6 +92,31 @@
       </details>
     </section>
 
+    <section class="provider" data-provider="deepseek">
+      <div class="provider-title">
+        <h2>DeepSeek</h2>
+        <span class="provider-status status status-neutral">NOT CONFIGURED</span>
+      </div>
+      <label for="deepseek-url">Canary conversation URL</label>
+      <input
+        id="deepseek-url"
+        class="conversation-url"
+        type="url"
+        placeholder="https://chat.deepseek.com/a/chat/s/..."
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <div class="buttons">
+        <button class="save" type="button">Save</button>
+        <button class="run primary" type="button">Run now</button>
+      </div>
+      <details class="result">
+        <summary class="row"><span>Last checked</span><strong class="checked-at">Never</strong></summary>
+        <p class="summary">Configure a small DeepSeek canary conversation to start monitoring.</p>
+        <pre class="details" hidden></pre>
+      </details>
+    </section>
+
     <p id="error" class="error" hidden></p>
   </main>
   <script type="module" src="popup.js"></script>

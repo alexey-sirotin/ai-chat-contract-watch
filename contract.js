@@ -16,6 +16,23 @@ export function extractConversationId(value) {
   return value.match(UUID_RE)?.[0] ?? null;
 }
 
+export function extractDeepSeekConversationId(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/\/a\/chat\/s\/([^/?#]+)/i);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    const match = value.match(/\/a\/chat\/s\/([^/?#]+)/i);
+    if (!match) return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+}
+
 export function validateChatGptConversation(data) {
   const violations = [];
   const stats = {
@@ -261,6 +278,106 @@ export function validateGrokConversation(data) {
   if (stats.turns === 0) violations.push("active Grok branch contains no recognized turns");
   if (stats.userTurns === 0) violations.push("no user Grok turn was found");
   if (stats.assistantTurns === 0) violations.push("no assistant Grok turn was found");
+
+  const uniqueViolations = [...new Set(violations)];
+  return {
+    ok: uniqueViolations.length === 0,
+    violations: uniqueViolations,
+    stats,
+    topLevelKeys,
+  };
+}
+
+export function validateDeepSeekConversation(data) {
+  const violations = [];
+  const stats = {
+    rawMessages: 0,
+    turns: 0,
+    userTurns: 0,
+    assistantTurns: 0,
+    fragments: 0,
+    requestFragments: 0,
+    responseFragments: 0,
+    thinkingFragments: 0,
+    fileFragments: 0,
+  };
+
+  if (!isObject(data)) {
+    return invalidObjectResult(stats);
+  }
+
+  const topLevelKeys = Object.keys(data).sort();
+
+  if (typeof data.conversationId !== "string" || !data.conversationId) {
+    violations.push("conversationId is missing or is not a non-empty string");
+  }
+  if (typeof data.currentMessageId !== "string" || !data.currentMessageId) {
+    violations.push("currentMessageId is missing or is not a non-empty string");
+  }
+  if (!Number.isInteger(data.rawMessageCount) || data.rawMessageCount < 1) {
+    violations.push("rawMessageCount is missing or is not a positive integer");
+  } else {
+    stats.rawMessages = data.rawMessageCount;
+  }
+
+  if (!Array.isArray(data.turns)) {
+    violations.push("turns is missing or is not an array");
+    return { ok: false, violations, stats, topLevelKeys };
+  }
+
+  for (const turn of data.turns) {
+    if (!isObject(turn)) {
+      violations.push("at least one DeepSeek active-branch turn is not an object");
+      continue;
+    }
+
+    stats.turns += 1;
+    if (typeof turn.id !== "string" || !turn.id) {
+      violations.push("at least one DeepSeek turn has no non-empty id");
+    }
+    if (turn.parentId != null && typeof turn.parentId !== "string") {
+      violations.push("at least one DeepSeek turn has a non-string parentId");
+    }
+
+    if (turn.role === "user") stats.userTurns += 1;
+    else if (turn.role === "assistant") stats.assistantTurns += 1;
+    else violations.push("at least one DeepSeek turn has an unrecognized role");
+
+    if (turn.sourceFragmentsArray !== true) {
+      violations.push("at least one DeepSeek source message no longer has an array fragments field");
+    }
+    if (!Array.isArray(turn.fragments)) {
+      violations.push("at least one DeepSeek turn has non-array fragments");
+      continue;
+    }
+
+    for (const fragment of turn.fragments) {
+      if (!isObject(fragment)) {
+        violations.push("at least one DeepSeek fragment is not an object");
+        continue;
+      }
+      stats.fragments += 1;
+      const type = String(fragment.type || "").toUpperCase();
+      if (type === "REQUEST") stats.requestFragments += 1;
+      else if (type === "RESPONSE") stats.responseFragments += 1;
+      else if (type === "THINK") stats.thinkingFragments += 1;
+      else if (type === "FILE") stats.fileFragments += 1;
+    }
+  }
+
+  if (stats.turns === 0) violations.push("active DeepSeek branch contains no recognized turns");
+  if (stats.userTurns === 0) violations.push("no user DeepSeek turn was found");
+  if (stats.assistantTurns === 0) violations.push("no assistant DeepSeek turn was found");
+  if (stats.requestFragments === 0) violations.push("no REQUEST fragment was found");
+  if (stats.responseFragments === 0) violations.push("no RESPONSE fragment was found");
+
+  if (
+    data.currentMessageId &&
+    data.turns.length &&
+    data.turns.at(-1)?.id !== data.currentMessageId
+  ) {
+    violations.push("active DeepSeek branch does not end at currentMessageId");
+  }
 
   const uniqueViolations = [...new Set(violations)];
   return {
