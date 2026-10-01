@@ -10,30 +10,62 @@
   <main>
     <header>
       <h1>AI Chat Contract Watch</h1>
-      <span id="status" class="status status-neutral">NOT CONFIGURED</span>
+      <span id="overall-status" class="status status-neutral">NOT CONFIGURED</span>
     </header>
 
-    <section>
-      <h2>ChatGPT</h2>
-      <label for="conversation-url">Canary conversation URL</label>
+    <section class="provider" data-provider="chatgpt">
+      <div class="provider-title">
+        <h2>ChatGPT</h2>
+        <span class="provider-status status status-neutral">NOT CONFIGURED</span>
+      </div>
+      <label for="chatgpt-url">Canary conversation URL</label>
       <input
-        id="conversation-url"
+        id="chatgpt-url"
+        class="conversation-url"
         type="url"
         placeholder="https://chatgpt.com/c/..."
         autocomplete="off"
         spellcheck="false"
       >
       <div class="buttons">
-        <button id="save" type="button">Save</button>
-        <button id="run" type="button" class="primary">Run now</button>
+        <button class="save" type="button">Save</button>
+        <button class="run primary" type="button">Run now</button>
+      </div>
+      <div class="result">
+        <div class="row"><span>Last checked</span><strong class="checked-at">Never</strong></div>
+        <p class="summary">Configure a small ChatGPT canary conversation to start monitoring.</p>
+        <pre class="details" hidden></pre>
       </div>
     </section>
 
-    <section class="result">
-      <div class="row"><span>Last checked</span><strong id="checked-at">Never</strong></div>
-      <p id="summary">Configure a small ChatGPT canary conversation to start monitoring.</p>
-      <pre id="details" hidden></pre>
+    <section class="provider" data-provider="claude">
+      <div class="provider-title">
+        <h2>Claude</h2>
+        <span class="provider-status status status-neutral">NOT CONFIGURED</span>
+      </div>
+      <label for="claude-url">Canary conversation URL</label>
+      <input
+        id="claude-url"
+        class="conversation-url"
+        type="url"
+        placeholder="https://claude.ai/chat/..."
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <div class="buttons">
+        <button class="save" type="button">Save</button>
+        <button class="run primary" type="button">Run now</button>
+      </div>
+      <div class="result">
+        <div class="row"><span>Last checked</span><strong class="checked-at">Never</strong></div>
+        <p class="summary">Configure a small Claude canary conversation to start monitoring.</p>
+        <pre class="details" hidden></pre>
+      </div>
     </section>
+
+    <div class="footer-actions">
+      <button id="run-all" type="button">Run all configured</button>
+    </div>
 
     <p id="error" class="error" hidden></p>
   </main>
