@@ -1,14 +1,17 @@
 import {
   ProbeStatus,
   extractConversationId,
+  extractDeepSeekConversationId,
   validateChatGptConversation,
   validateClaudeConversation,
   validateGrokConversation,
+  validateDeepSeekConversation,
 } from "./contract.js";
 import {
   fetchChatGptConversationInPage,
   fetchClaudeConversationInPage,
   fetchGrokConversationInPage,
+  fetchDeepSeekConversationInPage,
 } from "./providers.js";
 
 const CHECK_ALARM = "contract-watch-periodic";
@@ -22,6 +25,7 @@ const PROVIDERS = Object.freeze({
     label: "ChatGPT",
     tabQuery: "https://chatgpt.com/*",
     validator: validateChatGptConversation,
+    idFromUrl: extractConversationId,
     successSummary(stats) {
       return `ChatGPT contract looks compatible (${stats.messages} messages, ${stats.mappingNodes} mapping nodes).`;
     },
@@ -31,6 +35,7 @@ const PROVIDERS = Object.freeze({
     label: "Claude",
     tabQuery: "https://claude.ai/*",
     validator: validateClaudeConversation,
+    idFromUrl: extractConversationId,
     successSummary(stats) {
       return `Claude contract looks compatible (${stats.messages} messages, ${stats.activeBranchMessages} active-branch messages).`;
     },
@@ -40,10 +45,21 @@ const PROVIDERS = Object.freeze({
     label: "Grok",
     tabQuery: "https://grok.com/*",
     validator: validateGrokConversation,
+    idFromUrl: extractConversationId,
     successSummary(stats) {
       return `Grok contract looks compatible (${stats.responses} responses, ${stats.turns} active-branch turns).`;
     },
     fetchInPage: fetchGrokConversationInPage,
+  },
+  deepseek: {
+    label: "DeepSeek",
+    tabQuery: "https://chat.deepseek.com/*",
+    validator: validateDeepSeekConversation,
+    idFromUrl: extractDeepSeekConversationId,
+    successSummary(stats) {
+      return `DeepSeek contract looks compatible (${stats.rawMessages} messages, ${stats.turns} active-branch turns, ${stats.fragments} fragments).`;
+    },
+    fetchInPage: fetchDeepSeekConversationInPage,
   },
 });
 
@@ -230,14 +246,14 @@ async function runProviderProbe(providerKey, { retry }) {
   const state = await getState();
   const previous = state.providers[providerKey];
   const conversationUrl = config[providerKey].conversationUrl;
-  const conversationId = extractConversationId(conversationUrl);
+  const conversationId = provider.idFromUrl(conversationUrl);
 
   if (!conversationUrl || !conversationId) {
     const result = {
       ...defaultProviderState(provider.label),
       checkedAt: new Date().toISOString(),
       summary: conversationUrl
-        ? `Configured ${provider.label} URL does not contain a conversation UUID.`
+        ? `Configured ${provider.label} URL does not contain a recognizable conversation id.`
         : `${provider.label} canary is not configured.`,
     };
     state.providers[providerKey] = result;
@@ -354,6 +370,15 @@ function interpretObservation(observation, provider) {
       status,
       observedStatus: status,
       summary: `${observation.stage} returned HTTP ${observation.status}.`,
+    };
+  }
+
+  if (observation.kind === "provider-error") {
+    return {
+      ...base,
+      status: ProbeStatus.HTTP_ERROR,
+      observedStatus: ProbeStatus.HTTP_ERROR,
+      summary: observation.message || `${provider.label} API returned an application-level error.`,
     };
   }
 
