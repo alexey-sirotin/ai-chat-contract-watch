@@ -51,6 +51,13 @@ section {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  margin-bottom: 7px;
+}
+
+.component-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 10px;
 }
 
