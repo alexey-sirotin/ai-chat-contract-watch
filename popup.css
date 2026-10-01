@@ -19,7 +19,7 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 h1,
@@ -69,15 +69,18 @@ input {
 }
 
 .buttons,
-.footer-actions {
+.top-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.buttons {
   margin-top: 10px;
 }
 
-.footer-actions {
-  margin: 0 0 12px;
+.top-actions {
+  margin-bottom: 12px;
 }
 
 button {
