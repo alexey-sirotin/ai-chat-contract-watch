@@ -121,9 +121,9 @@ export function validateClaudeConversation(data) {
     if (message.sender === "human") stats.humanMessages += 1;
     else if (message.sender === "assistant") stats.assistantMessages += 1;
 
-    if (!Array.isArray(message.content)) {
+    if (message.content != null && !Array.isArray(message.content)) {
       violations.push("at least one Claude message has non-array content");
-    } else {
+    } else if (Array.isArray(message.content)) {
       stats.contentBlocks += message.content.length;
     }
   }
