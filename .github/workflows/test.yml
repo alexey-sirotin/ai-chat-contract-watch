@@ -19,5 +19,11 @@ jobs:
       - name: Install dependencies
         run: npm install --no-package-lock --no-audit --no-fund
 
+      - name: Check extension script syntax
+        run: |
+          node --check background.js
+          node --check contract.js
+          node --check popup.js
+
       - name: Run tests
         run: npm test
