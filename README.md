@@ -59,6 +59,8 @@ The DeepSeek API probe mirrors AI Chat Export's current history acquisition path
 
 The DeepSeek DOM probe mirrors the selection UI's numeric message-id discovery from `data-virtual-list-item-key`, `data-message-id`, `data-msg-id`, `message-*`, and `msg-*`, then checks those ids against the active API branch.
 
+DeepSeek sometimes postpones rendering its virtualized message list in a hidden background tab. If the API probe succeeds but the hidden tab still exposes no selectable message nodes after the DOM wait window, that DOM result is treated as **inconclusive**, not as a contract mismatch. The watchdog keeps the last reliable DeepSeek DOM result and does not schedule a mismatch-confirmation retry solely because of that hidden-tab condition. A visible or already-rendered DeepSeek tab is still validated normally.
+
 The extension does not compare complete JSON responses or whole DOM trees byte-for-byte. New harmless fields, classes, or unrelated page markup should not trigger an alert.
 
 ## Status model
@@ -70,9 +72,15 @@ The extension does not compare complete JSON responses or whole DOM trees byte-f
 - `NETWORK_ERROR` / `HTTP_ERROR` — the provider could not be checked reliably;
 - `NOT_CONFIGURED` — no canary conversation has been configured yet.
 
-Application-level provider errors that are not structural contract mismatches are reported as a yellow problem state rather than a red contract alert. If the API probe is inconclusive because of auth/network/HTTP failure, a simultaneous DOM miss does not by itself escalate the provider to a confirmed contract mismatch.
+Application-level provider errors that are not structural contract mismatches remain distinguishable in the popup. If the API probe is inconclusive because of auth/network/HTTP failure, a simultaneous DOM miss does not by itself escalate the provider to a confirmed contract mismatch.
 
-The toolbar badge summarizes all configured providers: red for a confirmed contract mismatch, yellow for inconclusive/problem states, green when at least one configured provider is healthy and none has a problem, and gray before configuration.
+The toolbar icon is deliberately simpler than the popup status model:
+
+- gray `AI` circle — no usable check data yet;
+- green `AI` circle — at least one configured provider is healthy and none has a problem;
+- red `AI` circle — any configured provider is `SUSPECT`, requires auth, has a network/HTTP problem, or has a confirmed contract mismatch.
+
+The icon is drawn deterministically in the extension service worker with flat colors and simple geometric letter shapes, so it does not depend on generated image assets.
 
 ## Canary conversations
 
@@ -95,9 +103,11 @@ Paste the URLs into the extension popup and click the provider's **Run now** but
 
 If a canary is not already open, the extension opens it in an inactive temporary tab, runs both probes in that provider's page context, and closes the tab afterward. The DOM probe waits briefly for SPA-rendered message markup before deciding that the selection structure is missing.
 
+DOM diagnostics also retain lightweight timing information from the page: navigation/load duration, the most recent provider API resource duration when available, DOM wait duration, and a component-sum total. They also record page visibility so slow or deferred background rendering can be distinguished from an actual selector change.
+
 ## Schedule
 
-Normal probes run every 12 hours. A first structural mismatch in either component schedules a provider-specific confirmation probe five minutes later before the toolbar turns red.
+Normal probes run every 12 hours. A first structural mismatch in either component schedules a provider-specific confirmation probe five minutes later before the mismatch is promoted from `SUSPECT` to `CONTRACT_MISMATCH`. An inconclusive hidden DeepSeek DOM probe is not counted as a structural failure and does not create that retry by itself.
 
 ## Local development
 
@@ -121,7 +131,7 @@ The project currently targets Chromium Manifest V3. Firefox packaging can be add
 
 ## Structure
 
-`background.js` owns scheduling, shared status handling, retries, aggregate API/DOM results, and toolbar state. Provider-specific page-context acquisition lives in `providers.js`; provider response-shape validation lives in `contract.js`; selection markup collection lives in `dom-probes.js`; pure DOM contract validation lives in `dom-contract.js`.
+`background.js` owns scheduling, shared status handling, retries, and aggregate API/DOM results. `background-wrapper.js` keeps the aggregate toolbar icon synchronized with locally stored state, while `action-icon.js` contains the deterministic icon-state mapping and drawing code. Provider-specific page-context acquisition lives in `providers.js`; provider response-shape validation lives in `contract.js`; selection markup collection lives in `dom-probes.js`; pure DOM contract validation lives in `dom-contract.js`.
 
 ## Privacy
 
@@ -131,7 +141,6 @@ Canary requests are made only to the configured providers using the browser's ex
 
 ## Planned next steps
 
-- exercise the API + DOM probes against all four live canaries and harden any provider-specific false positives;
 - retain a small local history of probe results;
 - add a diagnostics page with useful response-shape and DOM-shape information;
 - add Firefox packaging after the monitoring design stabilizes.

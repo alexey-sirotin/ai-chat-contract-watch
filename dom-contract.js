@@ -14,6 +14,19 @@ function overlapCount(actualIds, expectedIds) {
     .filter((id) => expected.has(id)).length;
 }
 
+function probeMetadata(snapshot) {
+  return {
+    visibilityState: typeof snapshot?.visibilityState === "string"
+      ? snapshot.visibilityState
+      : "unknown",
+    hidden: Boolean(snapshot?.hidden),
+    wasDiscarded: Boolean(snapshot?.wasDiscarded),
+    inconclusive: snapshot?.inconclusive === true,
+    inconclusiveReason: snapshot?.inconclusiveReason || null,
+    timings: isObject(snapshot?.timings) ? snapshot.timings : null,
+  };
+}
+
 export function validateSelectionDom(providerKey, snapshot, apiData = null) {
   if (!isObject(snapshot)) {
     return {
@@ -49,6 +62,7 @@ function validateChatGptDom(snapshot) {
     userTurns: Number(snapshot.userTurns || 0),
     assistantTurns: Number(snapshot.assistantTurns || 0),
     recognizedTurns: Number(snapshot.recognizedTurns || 0),
+    ...probeMetadata(snapshot),
   };
 
   if (stats.mode === "modern") {
@@ -80,6 +94,7 @@ function validateClaudeDom(snapshot) {
     uniqueIndexes: uniqueIndexes.length,
     articleRows: Number(snapshot.articleRows || 0),
     ariaSetSize: Number.isInteger(snapshot.ariaSetSize) ? snapshot.ariaSetSize : null,
+    ...probeMetadata(snapshot),
   };
 
   if (stats.rows < 2) {
@@ -104,6 +119,7 @@ function validateGrokDom(snapshot, expectedIds) {
     userHosts: Number(snapshot.userHosts || 0),
     assistantHosts: Number(snapshot.assistantHosts || 0),
     expectedIdOverlap: overlap,
+    ...probeMetadata(snapshot),
   };
 
   if (uniqueIds.length < 2) {
@@ -122,11 +138,17 @@ function validateDeepSeekDom(snapshot, expectedIds) {
   const uniqueIds = [...new Set(ids)];
   const overlap = overlapCount(uniqueIds, expectedIds);
   const expectedMinimum = Math.min(2, expectedIds.length);
+  const metadata = probeMetadata(snapshot);
   const stats = {
     candidateNodes: Number(snapshot.candidateNodes || 0),
     recognizedTurns: uniqueIds.length,
     expectedIdOverlap: overlap,
+    ...metadata,
   };
+
+  if (metadata.inconclusive) {
+    return { ok: true, violations: [], stats };
+  }
 
   if (uniqueIds.length < 2) {
     violations.push("DeepSeek DOM exposes fewer than two selectable message nodes with numeric ids");
