@@ -148,6 +148,9 @@ function defaultProviderState(label) {
     observedStatus: ProbeStatus.NOT_CONFIGURED,
     apiStatus: ProbeStatus.NOT_CONFIGURED,
     domStatus: ProbeStatus.NOT_CONFIGURED,
+    lastReliableDomStatus: ProbeStatus.NOT_CONFIGURED,
+    lastReliableDomSummary: `${label} DOM canary has no reliable result yet.`,
+    domProbeInconclusive: false,
     apiSummary: `${label} API canary is not configured.`,
     domSummary: `${label} DOM canary is not configured.`,
     checkedAt: null,
@@ -285,13 +288,15 @@ async function runProviderProbe(providerKey, { retry }) {
     observation.api?.kind === "ok" ? observation.api.data : null,
     provider,
   );
-  const interpreted = combineComponentResults(apiResult, domResult, provider);
+  const interpreted = combineComponentResults(apiResult, domResult, provider, previous);
   const result = applyFailureConfirmation(interpreted, previous, retry);
   state.providers[providerKey] = result;
   await saveState(state);
 
   const retryAlarm = `${RETRY_ALARM_PREFIX}${providerKey}`;
-  if (result.status === ProbeStatus.SUSPECT) {
+  const shouldRetry = result.status === ProbeStatus.SUSPECT
+    && (!result.domProbeInconclusive || result.apiStatus === ProbeStatus.CONTRACT_MISMATCH);
+  if (shouldRetry) {
     await chrome.alarms.create(retryAlarm, {
       when: Date.now() + RETRY_DELAY_MINUTES * 60_000,
     });
@@ -465,6 +470,7 @@ function interpretDomObservation(observation, providerKey, apiData, provider) {
   const base = {
     status: ProbeStatus.NETWORK_ERROR,
     observedStatus: ProbeStatus.NETWORK_ERROR,
+    inconclusive: false,
     summary: "DOM probe returned no structured result.",
     violations: [],
     stats: null,
@@ -487,6 +493,17 @@ function interpretDomObservation(observation, providerKey, apiData, provider) {
   }
 
   const validation = validateSelectionDom(providerKey, observation.data, apiData);
+  if (validation.stats?.inconclusive) {
+    return {
+      ...base,
+      status: null,
+      observedStatus: null,
+      inconclusive: true,
+      summary: `${provider.label} DOM probe was inconclusive because the hidden background tab did not render selectable message nodes.`,
+      stats: validation.stats,
+    };
+  }
+
   if (!validation.ok) {
     return {
       ...base,
@@ -507,9 +524,36 @@ function interpretDomObservation(observation, providerKey, apiData, provider) {
   };
 }
 
-function combineComponentResults(api, dom, provider) {
+function reliableDomStatus(previous) {
+  if ([ProbeStatus.OK, ProbeStatus.CONTRACT_MISMATCH].includes(previous?.lastReliableDomStatus)) {
+    return previous.lastReliableDomStatus;
+  }
+  if (previous?.domProbeInconclusive !== true && previous?.domStatus === ProbeStatus.OK) {
+    return ProbeStatus.OK;
+  }
+  return ProbeStatus.NOT_CONFIGURED;
+}
+
+function reliableDomSummary(previous, provider) {
+  if (typeof previous?.lastReliableDomSummary === "string" && previous.lastReliableDomSummary) {
+    return previous.lastReliableDomSummary;
+  }
+  if (previous?.domProbeInconclusive !== true && previous?.domStatus === ProbeStatus.OK) {
+    return previous.domSummary || `${provider.label} DOM last reliable result was OK.`;
+  }
+  return `${provider.label} DOM canary has no reliable result yet.`;
+}
+
+function combineComponentResults(api, dom, provider, previous) {
   const apiStatus = api.observedStatus;
-  const domStatus = dom.observedStatus;
+  const priorReliableDomStatus = reliableDomStatus(previous);
+  const domWasReliable = !dom.inconclusive
+    && [ProbeStatus.OK, ProbeStatus.CONTRACT_MISMATCH].includes(dom.observedStatus);
+  const lastReliableDomStatus = domWasReliable ? dom.observedStatus : priorReliableDomStatus;
+  const lastReliableDomSummary = domWasReliable
+    ? dom.summary
+    : reliableDomSummary(previous, provider);
+  const domStatus = dom.inconclusive ? lastReliableDomStatus : dom.observedStatus;
   const inconclusiveApi = [
     ProbeStatus.AUTH_REQUIRED,
     ProbeStatus.NETWORK_ERROR,
@@ -521,6 +565,16 @@ function combineComponentResults(api, dom, provider) {
     observedStatus = ProbeStatus.CONTRACT_MISMATCH;
   } else if (inconclusiveApi) {
     observedStatus = apiStatus;
+  } else if (dom.inconclusive) {
+    if (domStatus === ProbeStatus.OK) {
+      observedStatus = ProbeStatus.OK;
+    } else if (domStatus === ProbeStatus.CONTRACT_MISMATCH) {
+      observedStatus = [ProbeStatus.SUSPECT, ProbeStatus.CONTRACT_MISMATCH].includes(previous?.status)
+        ? previous.status
+        : ProbeStatus.CONTRACT_MISMATCH;
+    } else {
+      observedStatus = ProbeStatus.NOT_CONFIGURED;
+    }
   } else if (domStatus === ProbeStatus.CONTRACT_MISMATCH) {
     observedStatus = ProbeStatus.CONTRACT_MISMATCH;
   } else if (domStatus !== ProbeStatus.OK) {
@@ -532,15 +586,24 @@ function combineComponentResults(api, dom, provider) {
     ...(dom.violations || []).map((item) => `DOM: ${item}`),
   ];
 
+  const summary = dom.inconclusive
+    ? `${provider.label} — API ${apiStatus}; DOM deferred while hidden (last reliable: ${domStatus}).`
+    : `${provider.label} — API ${apiStatus}; DOM ${domStatus}.`;
+
   return {
     status: observedStatus,
     observedStatus,
     apiStatus,
     domStatus,
+    lastReliableDomStatus,
+    lastReliableDomSummary,
+    domProbeInconclusive: dom.inconclusive,
     apiSummary: api.summary,
-    domSummary: dom.summary,
+    domSummary: dom.inconclusive
+      ? `${dom.summary} Last reliable DOM status: ${domStatus}.`
+      : dom.summary,
     checkedAt: new Date().toISOString(),
-    summary: `${provider.label} — API ${apiStatus}; DOM ${domStatus}.`,
+    summary,
     violations,
     stats: {
       api: api.stats,
@@ -551,6 +614,13 @@ function combineComponentResults(api, dom, provider) {
 }
 
 function applyFailureConfirmation(current, previous, retry) {
+  if (current.domProbeInconclusive && current.apiStatus === ProbeStatus.OK) {
+    return {
+      ...current,
+      consecutiveContractFailures: Number(previous?.consecutiveContractFailures || 0),
+    };
+  }
+
   if (current.observedStatus !== ProbeStatus.CONTRACT_MISMATCH) {
     return {
       ...current,

@@ -5,6 +5,7 @@ export async function probeSelectionDomInPage(tabId, providerKey) {
     args: [providerKey],
     func: async (provider) => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const roundMs = (value) => Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
 
       const stableChatGptId = (value) =>
         !!value && value !== "client-created-root" && !String(value).startsWith("request-");
@@ -181,12 +182,60 @@ export async function probeSelectionDomInPage(tabId, providerKey) {
         return true;
       };
 
+      const apiResourceMarker = () => {
+        if (provider === "chatgpt") return "/backend-api/conversation/";
+        if (provider === "claude") return "/chat_conversations/";
+        if (provider === "grok") return "/responses?includeThreads=false";
+        if (provider === "deepseek") return "/api/v0/chat/history_messages";
+        return null;
+      };
+
+      const latestApiDuration = () => {
+        const marker = apiResourceMarker();
+        if (!marker) return null;
+        const entries = performance.getEntriesByType("resource")
+          .filter((entry) => typeof entry?.name === "string" && entry.name.includes(marker));
+        return entries.length ? roundMs(entries[entries.length - 1].duration) : null;
+      };
+
+      const navigationDuration = () => {
+        const [entry] = performance.getEntriesByType("navigation");
+        return entry ? roundMs(entry.duration) : null;
+      };
+
       try {
+        const domStartedAt = performance.now();
         let snapshot = collect();
         for (let attempt = 0; attempt < 40 && !ready(snapshot); attempt++) {
           await delay(250);
           snapshot = collect();
         }
+
+        const domMs = roundMs(performance.now() - domStartedAt);
+        const apiMs = latestApiDuration();
+        const tabLoadMs = navigationDuration();
+        const timingParts = [tabLoadMs, apiMs, domMs].filter(Number.isFinite);
+        const timings = {
+          tabLoadMs,
+          apiMs,
+          domMs,
+          totalMs: timingParts.length ? timingParts.reduce((sum, value) => sum + value, 0) : null,
+          totalBasis: "navigation+api+dom",
+        };
+
+        snapshot = {
+          ...snapshot,
+          visibilityState: document.visibilityState || "unknown",
+          hidden: Boolean(document.hidden),
+          wasDiscarded: Boolean(document.wasDiscarded),
+          timings,
+        };
+
+        if (provider === "deepseek" && !ready(snapshot) && snapshot.hidden) {
+          snapshot.inconclusive = true;
+          snapshot.inconclusiveReason = "hidden-background-tab";
+        }
+
         return { kind: "ok", data: snapshot };
       } catch (error) {
         return {

@@ -105,4 +105,34 @@ describe("validateSelectionDom", () => {
     expect(result.ok).toBe(true);
     expect(result.stats.expectedIdOverlap).toBe(2);
   });
+
+  it("treats a hidden DeepSeek DOM timeout as inconclusive instead of mismatch", () => {
+    const apiData = {
+      turns: [
+        { id: "1001", role: "user" },
+        { id: "1002", role: "assistant" },
+      ],
+    };
+    const result = validateSelectionDom("deepseek", {
+      candidateNodes: 0,
+      ids: [],
+      visibilityState: "hidden",
+      hidden: true,
+      inconclusive: true,
+      inconclusiveReason: "hidden-background-tab",
+      timings: {
+        tabLoadMs: 3200,
+        apiMs: 700,
+        domMs: 10000,
+        totalMs: 13900,
+        totalBasis: "navigation+api+dom",
+      },
+    }, apiData);
+
+    expect(result.ok).toBe(true);
+    expect(result.violations).toEqual([]);
+    expect(result.stats.inconclusive).toBe(true);
+    expect(result.stats.visibilityState).toBe("hidden");
+    expect(result.stats.timings.domMs).toBe(10000);
+  });
 });

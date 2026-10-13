@@ -64,6 +64,7 @@ async function load() {
     assertOk(response);
     for (const key of PROVIDER_KEYS) {
       cards[key].input.value = response.config?.[key]?.conversationUrl ?? "";
+      syncRunVisibility(key);
       renderProvider(key, response.state?.providers?.[key]);
     }
     renderOverall(response.state);
@@ -132,7 +133,13 @@ async function saveProviderConfig(provider) {
     conversationUrl: cards[provider].input.value,
   });
   assertOk(response);
+  syncRunVisibility(provider);
   return response;
+}
+
+function syncRunVisibility(provider) {
+  const card = cards[provider];
+  card.runButton.hidden = !card.input.value.trim();
 }
 
 function setRunning(provider) {
