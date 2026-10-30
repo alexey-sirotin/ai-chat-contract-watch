@@ -78,7 +78,8 @@ The toolbar icon is deliberately simpler than the popup status model:
 
 - gray `AI` circle — no usable check data yet;
 - green `AI` circle — at least one configured provider is healthy and none has a problem;
-- red `AI` circle — any configured provider is `SUSPECT`, requires auth, has a network/HTTP problem, or has a confirmed contract mismatch.
+- red `AI` circle — any configured provider is `SUSPECT`, requires auth, has a network/HTTP problem, or has a confirmed contract mismatch;
+- yellow `AI` circle — a check is running (manual, scheduled, or retry), returning to the aggregate result when done.
 
 The icon is drawn deterministically in the extension service worker with flat colors and simple geometric letter shapes, so it does not depend on generated image assets.
 
