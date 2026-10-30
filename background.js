@@ -21,6 +21,7 @@ const RETRY_ALARM_PREFIX = "contract-watch-retry-";
 const LEGACY_RETRY_ALARM = "contract-watch-retry";
 const DEFAULT_INTERVAL_MINUTES = 12 * 60;
 const RETRY_DELAY_MINUTES = 5;
+const DOM_PROBE_DEADLINE_MS = 12_000;
 
 const PROVIDERS = Object.freeze({
   chatgpt: {
@@ -341,7 +342,18 @@ async function observeInConversationTab({
 
     let dom;
     try {
-      dom = await probeSelectionDomInPage(tab.id, providerKey);
+      dom = await Promise.race([
+        probeSelectionDomInPage(tab.id, providerKey),
+        new Promise((resolve) => setTimeout(() => resolve(
+          providerKey === "deepseek"
+            ? { kind: "ok", data: {
+                ids: [], candidateNodes: 0, hidden: true, visibilityState: "unknown",
+                inconclusive: true, inconclusiveReason: "service-worker-deadline",
+                timings: { domMs: DOM_PROBE_DEADLINE_MS },
+              } }
+            : { kind: "network-error", message: `DOM probe exceeded ${DOM_PROBE_DEADLINE_MS}ms deadline.` },
+        ), DOM_PROBE_DEADLINE_MS)),
+      ]);
     } catch (error) {
       dom = {
         kind: "network-error",
