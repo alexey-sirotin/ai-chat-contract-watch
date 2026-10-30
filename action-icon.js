@@ -2,12 +2,14 @@ export const ActionIconState = Object.freeze({
   NO_DATA: "no-data",
   OK: "ok",
   PROBLEM: "problem",
+  RUNNING: "running",
 });
 
 const ACTION_ICON_COLORS = Object.freeze({
   [ActionIconState.NO_DATA]: "#6b7280",
   [ActionIconState.OK]: "#198754",
   [ActionIconState.PROBLEM]: "#c62828",
+  [ActionIconState.RUNNING]: "#eab308",
 });
 
 export function actionIconStateForStatuses(statuses) {
@@ -55,8 +57,24 @@ export function drawActionIcon(size, iconState) {
   return context.getImageData(0, 0, size, size);
 }
 
+let activeChecks = 0;
+
+export async function beginActionIconCheck() {
+  activeChecks += 1;
+  await applyActionIconState(ActionIconState.RUNNING);
+}
+
+export async function endActionIconCheck() {
+  activeChecks = Math.max(0, activeChecks - 1);
+  if (activeChecks === 0) await refreshActionIconFromStorage();
+}
+
 export async function applyActionIconForStatuses(statuses) {
-  const iconState = actionIconStateForStatuses(statuses);
+  const iconState = activeChecks > 0 ? ActionIconState.RUNNING : actionIconStateForStatuses(statuses);
+  return applyActionIconState(iconState);
+}
+
+async function applyActionIconState(iconState) {
   await chrome.action.setIcon({
     imageData: {
       16: drawActionIcon(16, iconState),
