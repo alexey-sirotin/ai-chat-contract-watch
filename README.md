@@ -101,7 +101,7 @@ DeepSeek conversation ids are parsed from the `/a/chat/s/<id>` path and are not 
 
 Paste the URLs into the extension popup and click the provider's **Run now** button. **Run all configured** checks configured providers sequentially.
 
-If a canary is not already open, the extension opens it in an inactive temporary tab, runs both probes in that provider's page context, and closes the tab afterward. The DOM probe waits briefly for SPA-rendered message markup before deciding that the selection structure is missing.
+If a canary is not already open, the extension opens it in an inactive temporary tab, runs both probes in that provider's page context, and closes the tab afterward. The DOM probe observes SPA markup mutations rather than polling timers. Its wait is independently bounded in the service worker to prevent hidden-tab timer throttling from keeping watchdog-created tabs open. A DeepSeek deadline is classified as inconclusive rather than a contract mismatch.
 
 DOM diagnostics also retain lightweight timing information from the page: navigation/load duration, the most recent provider API resource duration when available, DOM wait duration, and a component-sum total. They also record page visibility so slow or deferred background rendering can be distinguished from an actual selector change.
 
@@ -148,3 +148,5 @@ Canary requests are made only to the configured providers using the browser's ex
 ## License
 
 MIT
+
+During a manual run, the popup's aggregate status displays `RUNNING` until results are returned; the toolbar's steady-state icon still represents the last saved result.
