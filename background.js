@@ -15,6 +15,7 @@ import {
 } from "./providers.js";
 import { probeSelectionDomInPage } from "./dom-probes.js";
 import { validateSelectionDom } from "./dom-contract.js";
+import { beginActionIconCheck, endActionIconCheck } from "./action-icon.js";
 
 const CHECK_ALARM = "contract-watch-periodic";
 const RETRY_ALARM_PREFIX = "contract-watch-retry-";
@@ -237,17 +238,21 @@ async function applyBadge(state) {
 }
 
 async function setRunningBadge() {
-  await chrome.action.setBadgeText({ text: "…" });
-  await chrome.action.setBadgeBackgroundColor({ color: "#2563eb" });
+  await chrome.action.setBadgeText({ text: "" });
   await chrome.action.setTitle({ title: "AI Chat Contract Watch — running" });
 }
 
 async function runAllProbes() {
-  const results = {};
-  for (const providerKey of Object.keys(PROVIDERS)) {
-    results[providerKey] = await runProviderProbe(providerKey, { retry: false });
+  await beginActionIconCheck();
+  try {
+    const results = {};
+    for (const providerKey of Object.keys(PROVIDERS)) {
+      results[providerKey] = await runProviderProbe(providerKey, { retry: false });
+    }
+    return results;
+  } finally {
+    await endActionIconCheck();
   }
-  return results;
 }
 
 async function runProviderProbe(providerKey, { retry }) {
@@ -271,9 +276,11 @@ async function runProviderProbe(providerKey, { retry }) {
     return result;
   }
 
-  await setRunningBadge();
+  await beginActionIconCheck();
+  try {
+    await setRunningBadge();
 
-  const observation = await observeInConversationTab({
+    const observation = await observeInConversationTab({
     providerKey,
     conversationUrl,
     conversationId,
@@ -305,7 +312,10 @@ async function runProviderProbe(providerKey, { retry }) {
     await chrome.alarms.clear(retryAlarm);
   }
 
-  return result;
+    return result;
+  } finally {
+    await endActionIconCheck();
+  }
 }
 
 async function observeInConversationTab({
