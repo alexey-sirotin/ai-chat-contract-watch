@@ -93,6 +93,7 @@ async function runProvider(provider) {
   clearError();
   setBusy(true);
   setRunning(provider);
+  setOverallRunning();
   try {
     await saveProviderConfig(provider);
     const response = await chrome.runtime.sendMessage({ type: "run-now", provider });
@@ -101,6 +102,8 @@ async function runProvider(provider) {
     renderOverall(response.state);
   } catch (error) {
     showError(error);
+    const response = await chrome.runtime.sendMessage({ type: "get-state" }).catch(() => null);
+    if (response?.ok) renderOverall(response.state);
   } finally {
     setBusy(false);
   }
@@ -110,6 +113,7 @@ async function runAll() {
   clearError();
   setBusy(true);
   for (const key of PROVIDER_KEYS) setRunning(key);
+  setOverallRunning();
 
   try {
     for (const key of PROVIDER_KEYS) await saveProviderConfig(key);
@@ -121,6 +125,8 @@ async function runAll() {
     renderOverall(response.state);
   } catch (error) {
     showError(error);
+    const response = await chrome.runtime.sendMessage({ type: "get-state" }).catch(() => null);
+    if (response?.ok) renderOverall(response.state);
   } finally {
     setBusy(false);
   }
@@ -205,6 +211,11 @@ function renderComponentStatus(element, prefix, status) {
 function renderStatus(element, status, withPrefix) {
   element.textContent = withPrefix ? `STATUS: ${STATUS_LABEL[status] ?? status}` : (STATUS_LABEL[status] ?? status);
   element.className = `provider-status status ${STATUS_CLASS[status] ?? "status-neutral"}`;
+}
+
+function setOverallRunning() {
+  overallStatusEl.textContent = "RUNNING";
+  overallStatusEl.className = "status status-neutral";
 }
 
 function renderOverall(state) {

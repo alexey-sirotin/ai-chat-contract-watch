@@ -15,12 +15,14 @@ import {
 } from "./providers.js";
 import { probeSelectionDomInPage } from "./dom-probes.js";
 import { validateSelectionDom } from "./dom-contract.js";
+import { beginActionIconCheck, endActionIconCheck } from "./action-icon.js";
 
 const CHECK_ALARM = "contract-watch-periodic";
 const RETRY_ALARM_PREFIX = "contract-watch-retry-";
 const LEGACY_RETRY_ALARM = "contract-watch-retry";
 const DEFAULT_INTERVAL_MINUTES = 12 * 60;
 const RETRY_DELAY_MINUTES = 5;
+const DOM_PROBE_DEADLINE_MS = 12_000;
 
 const PROVIDERS = Object.freeze({
   chatgpt: {
@@ -236,17 +238,21 @@ async function applyBadge(state) {
 }
 
 async function setRunningBadge() {
-  await chrome.action.setBadgeText({ text: "…" });
-  await chrome.action.setBadgeBackgroundColor({ color: "#2563eb" });
+  await chrome.action.setBadgeText({ text: "" });
   await chrome.action.setTitle({ title: "AI Chat Contract Watch — running" });
 }
 
 async function runAllProbes() {
-  const results = {};
-  for (const providerKey of Object.keys(PROVIDERS)) {
-    results[providerKey] = await runProviderProbe(providerKey, { retry: false });
+  await beginActionIconCheck();
+  try {
+    const results = {};
+    for (const providerKey of Object.keys(PROVIDERS)) {
+      results[providerKey] = await runProviderProbe(providerKey, { retry: false });
+    }
+    return results;
+  } finally {
+    await endActionIconCheck();
   }
-  return results;
 }
 
 async function runProviderProbe(providerKey, { retry }) {
@@ -270,9 +276,11 @@ async function runProviderProbe(providerKey, { retry }) {
     return result;
   }
 
-  await setRunningBadge();
+  await beginActionIconCheck();
+  try {
+    await setRunningBadge();
 
-  const observation = await observeInConversationTab({
+    const observation = await observeInConversationTab({
     providerKey,
     conversationUrl,
     conversationId,
@@ -304,7 +312,10 @@ async function runProviderProbe(providerKey, { retry }) {
     await chrome.alarms.clear(retryAlarm);
   }
 
-  return result;
+    return result;
+  } finally {
+    await endActionIconCheck();
+  }
 }
 
 async function observeInConversationTab({
@@ -341,7 +352,18 @@ async function observeInConversationTab({
 
     let dom;
     try {
-      dom = await probeSelectionDomInPage(tab.id, providerKey);
+      dom = await Promise.race([
+        probeSelectionDomInPage(tab.id, providerKey),
+        new Promise((resolve) => setTimeout(() => resolve(
+          providerKey === "deepseek"
+            ? { kind: "ok", data: {
+                ids: [], candidateNodes: 0, hidden: true, visibilityState: "unknown",
+                inconclusive: true, inconclusiveReason: "service-worker-deadline",
+                timings: { domMs: DOM_PROBE_DEADLINE_MS },
+              } }
+            : { kind: "network-error", message: `DOM probe exceeded ${DOM_PROBE_DEADLINE_MS}ms deadline.` },
+        ), DOM_PROBE_DEADLINE_MS)),
+      ]);
     } catch (error) {
       dom = {
         kind: "network-error",

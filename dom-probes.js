@@ -4,7 +4,6 @@ export async function probeSelectionDomInPage(tabId, providerKey) {
     world: "MAIN",
     args: [providerKey],
     func: async (provider) => {
-      const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const roundMs = (value) => Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
 
       const stableChatGptId = (value) =>
@@ -206,9 +205,27 @@ export async function probeSelectionDomInPage(tabId, providerKey) {
       try {
         const domStartedAt = performance.now();
         let snapshot = collect();
-        for (let attempt = 0; attempt < 40 && !ready(snapshot); attempt++) {
-          await delay(250);
-          snapshot = collect();
+        if (!ready(snapshot)) {
+          snapshot = await new Promise((resolve) => {
+            const observer = new MutationObserver(() => {
+              const next = collect();
+              if (ready(next)) finish(next);
+            });
+            const timer = setTimeout(() => finish(collect()), 10_000);
+            let finished = false;
+            function finish(value) {
+              if (finished) return;
+              finished = true;
+              observer.disconnect();
+              clearTimeout(timer);
+              resolve(value);
+            }
+            observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true,
+              attributeFilter: ["data-turn-key", "data-chatgpt-selection-message-id", "data-index",
+                "id", "data-virtual-list-item-key", "data-message-id", "data-msg-id"] });
+            const next = collect();
+            if (ready(next)) finish(next);
+          });
         }
 
         const domMs = roundMs(performance.now() - domStartedAt);
